@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
-import type { ColumnLineage, GraphResponse, NodeDetail } from "@/types";
+import type { ColumnLineage, ColumnUsage, GraphResponse, NodeDetail } from "@/types";
 
 export const lineageKeys = {
   graph: (projectId: string) => ["graph", projectId] as const,
@@ -14,6 +14,15 @@ export function useGraph(projectId: string | null) {
     queryKey: lineageKeys.graph(projectId ?? ""),
     queryFn: () => apiGet<GraphResponse>(`/projects/${projectId}/graph`),
     enabled: !!projectId,
+  });
+}
+
+export function useColumnUsage(projectId: string | null, nodeId: string | null) {
+  return useQuery({
+    queryKey: ["column-usage", projectId ?? "", nodeId ?? ""],
+    queryFn: () =>
+      apiGet<ColumnUsage>(`/projects/${projectId}/nodes/${encodeURIComponent(nodeId ?? "")}/column-usage`),
+    enabled: !!projectId && !!nodeId,
   });
 }
 

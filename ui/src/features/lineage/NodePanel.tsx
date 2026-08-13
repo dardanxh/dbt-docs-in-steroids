@@ -148,16 +148,31 @@ export function NodePanel({
 
 function Metrics({ node }: { node: NodeDetail }) {
   const m = node.metrics;
-  const items = [
-    ["Downstream", m.downstream_count],
-    ["Upstream", m.upstream_count],
-    ["Direct in", m.fan_in],
-    ["Direct out", m.fan_out],
-  ] as const;
+  const lineage: [string, number, string][] = [
+    ["Downstream", m.downstream_count, "Transitive dependents"],
+    ["Upstream", m.upstream_count, "Transitive ancestors"],
+    ["Direct in", m.fan_in, "Direct inputs"],
+    ["Direct out", m.fan_out, "Direct dependents"],
+  ];
+  const quality: [string, number | string, string][] = [
+    ["LOC", m.loc, "Non-blank lines of SQL"],
+    ["Complexity", Math.round(m.complexity), "Heuristic: weighted joins/CTEs/subqueries/windows/CASE"],
+    ["Cohesion", m.cohesion.toFixed(2), "Heuristic: 1 / number of upstream sources (higher = more cohesive)"],
+    ["Tests", m.test_count, "Tests referencing this model"],
+  ];
   return (
-    <div className="grid grid-cols-4 gap-px border-border border-b bg-border/30">
-      {items.map(([label, val]) => (
-        <div key={label} className="bg-panel px-2 py-2 text-center">
+    <div className="border-border border-b">
+      <Grid items={lineage} />
+      <Grid items={quality} />
+    </div>
+  );
+}
+
+function Grid({ items }: { items: [string, number | string, string][] }) {
+  return (
+    <div className="grid grid-cols-4 gap-px bg-border/30">
+      {items.map(([label, val, hint]) => (
+        <div key={label} className="bg-panel px-2 py-2 text-center" title={hint}>
           <div className="font-semibold text-fg text-sm">{val}</div>
           <div className="text-[10px] text-muted">{label}</div>
         </div>

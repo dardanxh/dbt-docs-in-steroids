@@ -2,10 +2,10 @@ import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode
 import { Crosshair, PanelRight, Scan } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hotspotColor, layerColor } from "@/lib/colors";
-import { useThemeTokens } from "@/lib/settings";
+import { useSettings, useThemeTokens } from "@/lib/settings";
 import { cn } from "@/lib/utils";
-import type { ColumnLineage, MetricKey } from "@/types";
-import { useGraph } from "./api";
+import type { ColumnLineage, MetricKey, NodeMetrics } from "@/types";
+import { useColumnUsage, useGraph } from "./api";
 import { computeLayout } from "./layout";
 import { NodePanel } from "./NodePanel";
 import { CollapsedNode, HeaderNode, ModelNode } from "./nodes";
@@ -19,7 +19,17 @@ const METRICS: { key: MetricKey; label: string }[] = [
   { key: "fan_in", label: "Direct inputs" },
   { key: "betweenness", label: "Betweenness centrality" },
   { key: "hotspot_score", label: "Hotspot score" },
+  { key: "complexity", label: "SQL complexity" },
+  { key: "loc", label: "Lines of code" },
+  { key: "test_count", label: "Test count" },
+  { key: "cohesion", label: "Cohesion" },
 ];
+
+function formatBadge(key: keyof NodeMetrics, v: number): string {
+  if (key === "cohesion") return v.toFixed(2);
+  if (key === "complexity") return String(Math.round(v));
+  return String(v);
+}
 
 interface Trace {
   lineage: ColumnLineage;
@@ -29,6 +39,7 @@ interface Trace {
 export function LineageView({ projectId }: { projectId: string }) {
   const { data: graph, isPending, error } = useGraph(projectId);
   const tokens = useThemeTokens();
+  const { settings } = useSettings();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [metric, setMetric] = useState<MetricKey>("downstream_count");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -138,6 +149,33 @@ export function LineageView({ projectId }: { projectId: string }) {
 
   const focusName = focusId ? (graph?.nodes.find((n) => n.id === focusId)?.name ?? focusId) : null;
 
+  // Column-usage fractions for the selected node's neighbours.
+  const { data: usage } = useColumnUsage(projectId, selectedNodeId);
+
+  // Right-aligned node badges: the configurable metric (default LOC) when nothing
+  // is selected; the selected node shows its column count and each neighbour shows
+  // used/total columns consumed across the shared edge.
+  const badges = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!graph) return map;
+    if (selectedNodeId) {
+      const sel = graph.nodes.find((n) => n.id === selectedNodeId);
+      if (sel) map.set(selectedNodeId, `${sel.metrics.column_count} cols`);
+      if (settings.showColumnFractions && usage) {
+        for (const u of [...usage.upstream, ...usage.downstream]) {
+          map.set(u.node_id, u.total > 0 ? `${u.used}/${u.total}` : "–");
+        }
+      }
+    } else if (settings.badgeMetric !== "none") {
+      const key = settings.badgeMetric as keyof NodeMetrics;
+      for (const n of graph.nodes) {
+        const v = n.metrics[key];
+        if (v != null && v !== 0) map.set(n.id, formatBadge(key, v));
+      }
+    }
+    return map;
+  }, [graph, selectedNodeId, usage, settings.badgeMetric, settings.showColumnFractions]);
+
   const layout = useMemo(() => {
     if (!graph) return { nodes: [], edges: [] };
     return computeLayout(graph, {
@@ -147,8 +185,9 @@ export function LineageView({ projectId }: { projectId: string }) {
       activeEdges: highlight.edges,
       focusIds: focusSet,
       layerOrder: layerOrder ?? undefined,
+      badges,
     });
-  }, [graph, collapsed, metric, highlight, focusId, focusSet, layerOrder]);
+  }, [graph, collapsed, metric, highlight, focusId, focusSet, layerOrder, badges]);
 
   const reorderLayers = useCallback(
     (from: number, to: number) => {

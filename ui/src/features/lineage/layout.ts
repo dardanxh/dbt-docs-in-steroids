@@ -20,6 +20,7 @@ export interface ModelNodeData {
   columnLineageStatus: string | null;
   dimmed: boolean;
   highlighted: boolean;
+  badge?: string; // right-aligned chip (LOC / used·total column fraction / etc.)
   [key: string]: unknown;
 }
 
@@ -42,6 +43,7 @@ export interface LayoutOptions {
   activeEdges?: Set<string>; // "src->dst" node-level edges to mark active
   focusIds?: Set<string> | null; // when set, ONLY these nodes (+ their edges) are shown
   layerOrder?: string[]; // custom left-to-right column order (defaults to API order)
+  badges?: Map<string, string>; // nodeId -> right-aligned badge text
 }
 
 export function computeLayout(graph: GraphResponse, opts: LayoutOptions): LayoutResult {
@@ -122,6 +124,7 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
           columnLineageStatus: n.column_lineage_status,
           dimmed: hasHighlight && !highlighted,
           highlighted,
+          badge: opts.badges?.get(n.id),
         } satisfies ModelNodeData,
         draggable: false,
       });

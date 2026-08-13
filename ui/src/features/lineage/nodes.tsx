@@ -18,6 +18,7 @@ export function ModelNode({ data, selected }: NodeProps) {
     columnLineageStatus: string | null;
     dimmed: boolean;
     highlighted: boolean;
+    badge?: string;
   };
   const accent = layerColor(d.layer);
   const heat = hotspotColor(d.metricValue);
@@ -45,12 +46,17 @@ export function ModelNode({ data, selected }: NodeProps) {
           🌱
         </span>
       ) : null}
-      <span className="truncate font-medium text-fg" title={d.label}>
+      <span className="min-w-0 flex-1 truncate font-medium text-fg" title={d.label}>
         {d.label}
       </span>
+      {d.badge && (
+        <span className="shrink-0 rounded bg-panel-2 px-1 py-0.5 font-mono text-[10px] text-muted">
+          {d.badge}
+        </span>
+      )}
       {d.columnLineageStatus && (
         <span
-          className="ml-auto h-2 w-2 shrink-0 rounded-full"
+          className="h-2 w-2 shrink-0 rounded-full"
           title={`column lineage: ${d.columnLineageStatus}`}
           style={{ background: STATUS_DOT[d.columnLineageStatus] ?? "#6b7280" }}
         />
