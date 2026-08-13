@@ -1,5 +1,6 @@
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { layerColor } from "@/lib/colors";
+import { useThemeTokens } from "@/lib/settings";
 import type { Analytics } from "@/types";
 import { useAnalytics } from "./api";
 
@@ -7,6 +8,15 @@ const CHART_COLORS = ["#818cf8", "#38bdf8", "#f472b6", "#34d399", "#fbbf24", "#9
 
 export function AnalyticsDashboard({ projectId }: { projectId: string }) {
   const { data, isPending, error } = useAnalytics(projectId);
+  const tokens = useThemeTokens();
+  const tickFill = tokens.muted;
+  const tooltipStyle = {
+    background: tokens.panel,
+    border: `1px solid ${tokens.border}`,
+    borderRadius: 8,
+    fontSize: 12,
+    color: tokens.fg,
+  };
   if (isPending) return <div className="p-8 text-muted">Loading analytics…</div>;
   if (error || !data) return <div className="p-8 text-muted">Failed to load analytics.</div>;
 
@@ -39,9 +49,9 @@ export function AnalyticsDashboard({ projectId }: { projectId: string }) {
         <Card title="Models per layer">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={layerData} margin={{ top: 8, right: 8, bottom: 8, left: -12 }}>
-              <XAxis dataKey="layer" tick={{ fill: "#8595ad", fontSize: 11 }} />
-              <YAxis tick={{ fill: "#8595ad", fontSize: 11 }} />
-              <Tooltip contentStyle={TOOLTIP} cursor={{ fill: "#ffffff10" }} />
+              <XAxis dataKey="layer" tick={{ fill: tickFill, fontSize: 11 }} />
+              <YAxis tick={{ fill: tickFill, fontSize: 11 }} />
+              <Tooltip contentStyle={tooltipStyle} cursor={{ fill: tokens.muted, fillOpacity: 0.12 }} />
               <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                 {layerData.map((d) => (
                   <Cell key={d.layer} fill={layerColor(d.layer)} />
@@ -59,7 +69,7 @@ export function AnalyticsDashboard({ projectId }: { projectId: string }) {
                   <Cell key={d.name} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip contentStyle={TOOLTIP} />
+              <Tooltip contentStyle={tooltipStyle} />
             </PieChart>
           </ResponsiveContainer>
         </Card>
@@ -81,8 +91,6 @@ export function AnalyticsDashboard({ projectId }: { projectId: string }) {
     </div>
   );
 }
-
-const TOOLTIP = { background: "#111826", border: "1px solid #223049", borderRadius: 8, fontSize: 12 };
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (

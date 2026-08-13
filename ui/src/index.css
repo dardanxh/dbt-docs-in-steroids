@@ -11,7 +11,8 @@
   --color-fg: #e6ecf5;
   --color-accent: #4f8cff;
 
-  /* Per-layer accents (used for swimlane headers + node borders). */
+  /* Per-layer accents (used for swimlane headers + node borders). Shared across
+     themes — saturated enough to read on both light and dark. */
   --color-layer-source: #7c8b9e;
   --color-layer-stage: #38bdf8;
   --color-layer-dwh: #818cf8;
@@ -20,6 +21,18 @@
   --color-layer-lkp: #fbbf24;
   --color-layer-archive: #94a3b8;
   --color-layer-other: #64748b;
+}
+
+/* Light theme — overrides the dark defaults above. Keyed on html[data-theme]
+   (set by SettingsProvider) so it beats the :root defaults from @theme. */
+html[data-theme="light"] {
+  --color-bg: #f7f9fc;
+  --color-panel: #ffffff;
+  --color-panel-2: #eef1f6;
+  --color-border: #d5dbe6;
+  --color-muted: #5b6b83;
+  --color-fg: #1a2233;
+  --color-accent: #2563eb;
 }
 
 html,
@@ -45,7 +58,8 @@ body,
   stroke: var(--color-border);
 }
 .react-flow__edge.dimmed .react-flow__edge-path {
-  stroke: #1a2436;
+  stroke: var(--color-border);
+  opacity: 0.35;
 }
 .react-flow__edge.active .react-flow__edge-path {
   stroke: var(--color-accent);

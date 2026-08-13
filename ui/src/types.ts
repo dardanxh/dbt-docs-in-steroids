@@ -20,6 +20,11 @@ export interface NodeMetrics {
   degree_centrality: number;
   betweenness: number;
   hotspot_score: number;
+  loc: number;
+  complexity: number;
+  cohesion: number;
+  test_count: number;
+  column_count: number;
 }
 
 export type MetricKey = keyof NodeMetrics;
@@ -83,6 +88,18 @@ export interface NodeDetail {
   parents: string[];
   children: string[];
   column_lineage_status: string | null;
+  sql: string | null;
+}
+
+export interface ColumnUsageItem {
+  node_id: string;
+  used: number;
+  total: number;
+}
+
+export interface ColumnUsage {
+  upstream: ColumnUsageItem[];
+  downstream: ColumnUsageItem[];
 }
 
 export interface ColumnRef {

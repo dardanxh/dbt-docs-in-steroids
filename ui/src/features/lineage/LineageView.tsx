@@ -2,6 +2,7 @@ import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode
 import { Crosshair, PanelRight, Scan } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hotspotColor, layerColor } from "@/lib/colors";
+import { useThemeTokens } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import type { ColumnLineage, MetricKey } from "@/types";
 import { useGraph } from "./api";
@@ -27,6 +28,7 @@ interface Trace {
 
 export function LineageView({ projectId }: { projectId: string }) {
   const { data: graph, isPending, error } = useGraph(projectId);
+  const tokens = useThemeTokens();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [metric, setMetric] = useState<MetricKey>("downstream_count");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -217,7 +219,7 @@ export function LineageView({ projectId }: { projectId: string }) {
         proOptions={{ hideAttribution: true }}
         nodesDraggable={false}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#1b2740" />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={tokens.border} />
         <Controls showInteractive={false} />
       </ReactFlow>
 

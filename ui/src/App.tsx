@@ -1,13 +1,13 @@
-import { GitFork, LayoutDashboard } from "lucide-react";
 import { useState } from "react";
 import { AnalyticsDashboard } from "@/features/analytics/AnalyticsDashboard";
+import { Sidebar, type View } from "@/features/app-shell/Sidebar";
+import { ThemeToggle } from "@/features/app-shell/ThemeToggle";
 import { LineageView } from "@/features/lineage/LineageView";
 import { ProjectBar } from "@/features/projects/ProjectBar";
-import { cn } from "@/lib/utils";
+import { ProjectsView } from "@/features/projects/ProjectsView";
+import { SettingsView } from "@/features/settings/SettingsView";
 
-type View = "lineage" | "analytics";
-
-// Persist selection in the URL so a view is shareable/reloadable.
+// Persist active project + view in the URL so a view is shareable/reloadable.
 function useUrlState() {
   const params = new URLSearchParams(window.location.search);
   const [projectId, setProjectId] = useState<string | null>(params.get("project"));
@@ -36,69 +36,56 @@ function useUrlState() {
 export function App() {
   const { projectId, view, setProjectId, setView } = useUrlState();
 
+  const openProject = (id: string) => {
+    setProjectId(id);
+    setView("lineage");
+  };
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-4 border-border border-b bg-panel px-4 py-2.5">
         <div className="flex items-center gap-2 font-semibold text-fg text-sm">
           <span className="text-accent">◈</span> dbt-docs-in-steroids
         </div>
-        <nav className="flex items-center gap-1">
-          <Tab active={view === "lineage"} onClick={() => setView("lineage")} icon={<GitFork size={14} />}>
-            Lineage
-          </Tab>
-          <Tab
-            active={view === "analytics"}
-            onClick={() => setView("analytics")}
-            icon={<LayoutDashboard size={14} />}
-          >
-            Analytics
-          </Tab>
-        </nav>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
           <ProjectBar selectedId={projectId} onSelect={setProjectId} />
+          <ThemeToggle />
         </div>
       </header>
 
-      <main className="min-h-0 flex-1">
-        {!projectId ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-muted">
-            <p>No project selected.</p>
-            <p className="text-xs">
-              Register a dbt project from its path or upload its artifacts (top right).
-            </p>
-          </div>
-        ) : view === "lineage" ? (
-          <LineageView projectId={projectId} />
-        ) : (
-          <AnalyticsDashboard projectId={projectId} />
-        )}
-      </main>
+      <div className="flex min-h-0 flex-1">
+        <main className="min-w-0 flex-1">
+          {!projectId && view !== "projects" && view !== "settings" ? (
+            <Empty onGoProjects={() => setView("projects")} />
+          ) : view === "lineage" && projectId ? (
+            <LineageView projectId={projectId} />
+          ) : view === "analytics" && projectId ? (
+            <AnalyticsDashboard projectId={projectId} />
+          ) : view === "projects" ? (
+            <ProjectsView activeId={projectId} onOpen={openProject} />
+          ) : view === "settings" ? (
+            <SettingsView />
+          ) : (
+            <Empty onGoProjects={() => setView("projects")} />
+          )}
+        </main>
+        <Sidebar view={view} onView={setView} />
+      </div>
     </div>
   );
 }
 
-function Tab({
-  active,
-  onClick,
-  icon,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
+function Empty({ onGoProjects }: { onGoProjects: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium text-xs",
-        active ? "bg-panel-2 text-fg" : "text-muted hover:text-fg",
-      )}
-    >
-      {icon}
-      {children}
-    </button>
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-muted">
+      <p>No project selected.</p>
+      <button
+        type="button"
+        onClick={onGoProjects}
+        className="rounded-md border border-border bg-panel-2 px-3 py-1.5 text-fg text-xs hover:bg-panel"
+      >
+        Go to Projects
+      </button>
+    </div>
   );
 }

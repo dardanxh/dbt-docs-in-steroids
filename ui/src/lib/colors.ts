@@ -18,7 +18,7 @@ export function layerColor(layer: string): string {
 
 // Sequential "cool → hot" scale for hotspot intensity (0..1). Blue → amber → red.
 const STOPS: Array<[number, [number, number, number]]> = [
-  [0.0, [40, 52, 74]], // near-panel (cold)
+  [0.0, [100, 116, 139]], // neutral slate (cold) — subtle on both light & dark after mixing
   [0.35, [59, 130, 246]], // blue
   [0.7, [251, 191, 36]], // amber
   [1.0, [239, 68, 68]], // red (hottest)

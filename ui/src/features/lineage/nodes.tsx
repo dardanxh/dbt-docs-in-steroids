@@ -26,7 +26,7 @@ export function ModelNode({ data, selected }: NodeProps) {
       style={{
         width: NODE_WIDTH,
         borderLeftColor: accent,
-        background: `color-mix(in srgb, ${heat} 22%, #111826)`,
+        background: `color-mix(in srgb, ${heat} 22%, var(--color-panel))`,
       }}
       className={cn(
         "flex items-center gap-2 rounded-md border border-border border-l-4 px-2.5 py-1.5 text-xs shadow-sm transition-opacity",

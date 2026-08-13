@@ -4,11 +4,14 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./index.css";
 import { queryClient } from "./lib/query-client";
+import { SettingsProvider } from "./lib/settings";
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
+    <SettingsProvider>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </SettingsProvider>
   </StrictMode>,
 );
