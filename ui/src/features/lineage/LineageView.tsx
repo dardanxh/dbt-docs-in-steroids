@@ -168,10 +168,14 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
         edges: new Set<string>(trace.lineage.edges.map((e) => `${e.src.node_id}->${e.dst.node_id}`)),
       };
     }
+    // In a focus tab everything shown is already the relevant subgraph, so don't
+    // dim anything (a passive selection/filter highlight would make related nodes
+    // look unrelated). An explicit column trace above still highlights its path.
+    if (focusId) return { nodes: undefined, edges: undefined };
     if (selectionHighlight) return selectionHighlight;
     if (filterMatch) return { nodes: filterMatch, edges: new Set<string>() };
     return { nodes: undefined, edges: undefined };
-  }, [trace, selectionHighlight, filterMatch]);
+  }, [trace, focusId, selectionHighlight, filterMatch]);
 
   // A trace often reaches into a collapsed layer (e.g. sources). Expand any
   // layer that contains a highlighted node so the path is actually visible.
