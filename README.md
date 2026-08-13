@@ -11,6 +11,12 @@ to read and blind to column flow. **dbt-docs-in-steroids** fixes that with:
   trace it back to the source columns it came from, across every layer.
 - 📊 **Analytics** — model/test/source/macro counts, per-layer breakdown,
   materializations, most-used models, and column-lineage coverage.
+- 🧪 **Quality explorer** — a sortable worklist of models by LOC, SQL complexity,
+  cohesion, and test count (heuristics); flags untested models.
+- 🧭 **Daily-driver UX** — Cmd/Ctrl-K command palette, graph search + test filter,
+  focus mode, column-usage fractions (e.g. `3/10`) on dependents, per-node badges,
+  a syntax-highlighted SQL viewer, minimap, drag-to-reorder layers, light/dark
+  themes, and a Projects manager (register from path or upload artifacts).
 
 It reads standard dbt artifacts (`target/manifest.json` + `catalog.json`) — **no
 warehouse connection needed**. Point it at a local dbt project, or upload the

@@ -14,18 +14,32 @@ Vite + React 19 + TypeScript (strict). Biome for lint/format, pnpm.
 
 ```
 src/
-├── App.tsx              # shell: nav (Lineage/Analytics) + ProjectBar; URL state
+├── App.tsx              # shell: right-sidebar nav + ProjectBar + ThemeToggle; URL state (project/view/node)
 ├── lib/
 │   ├── api.ts           # apiGet/apiPost/apiPostForm/apiDelete over proxied /api
 │   ├── colors.ts        # layer colors + hotspot color scale
+│   ├── settings.tsx     # SettingsProvider/useSettings (localStorage) + useThemeTokens
 │   ├── query-client.ts
 │   └── api-types.gen.ts # generated (pnpm openapi:gen); do not edit
 ├── types.ts             # hand-written domain types mirroring the API
 └── features/
-    ├── projects/        # api.ts (query hooks) + ProjectBar.tsx
+    ├── app-shell/       # Sidebar (primary nav), ThemeToggle
+    ├── command/         # CommandPalette (Cmd/Ctrl-K)
+    ├── projects/        # api.ts (query hooks) + ProjectBar + ProjectsView
     ├── lineage/         # api.ts, layout.ts (swimlane), LineageView, NodePanel, nodes.tsx
+    ├── quality/         # QualityView (sortable heuristic-metrics table)
+    ├── settings/        # SettingsView
     └── analytics/       # api.ts + AnalyticsDashboard.tsx
 ```
+
+**Theming:** dark is the `:root`/`@theme` default; light is `html[data-theme="light"]`
+token overrides (applied by `SettingsProvider`). JS consumers that can't use CSS
+vars (React Flow Background/MiniMap, recharts) read values via `useThemeTokens()`.
+Never hardcode hex — use semantic tokens or `useThemeTokens()`.
+
+**Cross-view node selection:** the Cmd-K palette and Quality view select a node by
+setting the URL `node` param + switching to Lineage; `LineageView` honours the
+`focusNodeId` prop.
 
 ## Conventions
 
