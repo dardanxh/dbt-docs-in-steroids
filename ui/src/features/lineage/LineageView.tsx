@@ -46,6 +46,8 @@ interface FocusTab {
 
 const ALL_TAB: FocusTab = { key: "all", focusId: null, label: "All" };
 
+type FocusDirection = "up" | "down" | "both";
+
 export function LineageView({ projectId, focusNodeId }: { projectId: string; focusNodeId?: string | null }) {
   const { data: graph, isPending, error } = useGraph(projectId);
   const tokens = useThemeTokens();
@@ -78,6 +80,10 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const [layerOrder, setLayerOrder] = useState<string[] | null>(null);
   const [search, setSearch] = useState("");
   const [testFilter, setTestFilter] = useState<"all" | "untested" | "tested">("all");
+  // Focus-tab depth control: how many hops of parents/children to include, and
+  // in which direction. null depth = the whole lineage.
+  const [focusDepth, setFocusDepth] = useState<number | null>(null);
+  const [focusDirection, setFocusDirection] = useState<FocusDirection>("both");
 
   // On first load, collapse oversized layers (e.g. 200+ sources) so the swimlane
   // graph fits the viewport instead of stretching thousands of px tall.
@@ -168,10 +174,10 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
         edges: new Set<string>(trace.lineage.edges.map((e) => `${e.src.node_id}->${e.dst.node_id}`)),
       };
     }
-    // In a focus tab everything shown is already the relevant subgraph, so don't
-    // dim anything (a passive selection/filter highlight would make related nodes
-    // look unrelated). An explicit column trace above still highlights its path.
-    if (focusId) return { nodes: undefined, edges: undefined };
+    // In a focus tab everything shown is already the relevant subgraph. Selecting
+    // a node highlights its in/out ARROWS but does NOT dim the other nodes (which
+    // would make related nodes look unrelated).
+    if (focusId) return { nodes: undefined, edges: selectionHighlight?.edges };
     if (selectionHighlight) return selectionHighlight;
     if (filterMatch) return { nodes: filterMatch, edges: new Set<string>() };
     return { nodes: undefined, edges: undefined };
@@ -194,28 +200,34 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     [graph],
   );
 
-  // Focus mode: the focused model + all its transitive ancestors and descendants.
-  // Everything else is hidden (see computeLayout's focusIds filter).
+  // Focus mode: the focused model + its parents/children up to `focusDepth` hops
+  // (null = unlimited) in the chosen direction. Everything else is hidden (see
+  // computeLayout's focusIds filter).
   const focusSet = useMemo(() => {
     if (!focusId) return null;
     const set = new Set<string>([focusId]);
-    const walk = (adj: Map<string, string[]>) => {
-      const queue = [focusId];
-      while (queue.length) {
-        const cur = queue.shift();
-        if (cur === undefined) break;
-        for (const next of adj.get(cur) ?? []) {
-          if (!set.has(next)) {
-            set.add(next);
-            queue.push(next);
+    const maxDepth = focusDepth ?? Number.POSITIVE_INFINITY;
+    const bfs = (adj: Map<string, string[]>) => {
+      let frontier = [focusId];
+      let depth = 0;
+      while (frontier.length && depth < maxDepth) {
+        const next: string[] = [];
+        for (const cur of frontier) {
+          for (const nb of adj.get(cur) ?? []) {
+            if (!set.has(nb)) {
+              set.add(nb);
+              next.push(nb);
+            }
           }
         }
+        frontier = next;
+        depth++;
       }
     };
-    walk(adjacency.parents);
-    walk(adjacency.children);
+    if (focusDirection === "up" || focusDirection === "both") bfs(adjacency.parents);
+    if (focusDirection === "down" || focusDirection === "both") bfs(adjacency.children);
     return set;
-  }, [focusId, adjacency]);
+  }, [focusId, adjacency, focusDepth, focusDirection]);
 
   // Column-usage fractions for the selected node's neighbours.
   const { data: usage } = useColumnUsage(projectId, selectedNodeId);
@@ -313,7 +325,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       <TabBar tabs={tabs} activeKey={activeKey} onSelect={setActiveKey} onClose={closeTab} />
       <div className="relative min-h-0 flex-1">
         <ReactFlow
-          key={activeKey}
+          key={`${activeKey}:${focusDepth ?? "all"}:${focusDirection}`}
           nodes={layout.nodes}
           edges={layout.edges}
           nodeTypes={NODE_TYPES}
@@ -336,6 +348,16 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
           <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={tokens.border} />
           <Controls showInteractive={false} />
         </ReactFlow>
+
+        {focusId && (
+          <FocusDepthControl
+            depth={focusDepth}
+            onDepth={setFocusDepth}
+            direction={focusDirection}
+            onDirection={setFocusDirection}
+            count={focusSet?.size ?? 1}
+          />
+        )}
 
         {(() => {
           const toolbar = (
@@ -458,6 +480,55 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function FocusDepthControl({
+  depth,
+  onDepth,
+  direction,
+  onDirection,
+  count,
+}: {
+  depth: number | null;
+  onDepth: (d: number | null) => void;
+  direction: FocusDirection;
+  onDirection: (d: FocusDirection) => void;
+  count: number;
+}) {
+  const seg = "px-1.5 py-0.5 text-[11px]";
+  const on = "bg-panel-2 text-fg";
+  const off = "text-muted hover:text-fg";
+  return (
+    <div className="absolute top-4 left-4 z-10 flex items-center gap-2 rounded-md border border-border bg-panel/95 px-2 py-1.5 text-xs shadow-lg backdrop-blur">
+      <span className="text-muted">Show</span>
+      <div className="flex overflow-hidden rounded border border-border">
+        {(["up", "both", "down"] as FocusDirection[]).map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => onDirection(d)}
+            className={cn(seg, direction === d ? on : off)}
+          >
+            {d === "up" ? "↑ upstream" : d === "down" ? "downstream ↓" : "both"}
+          </button>
+        ))}
+      </div>
+      <span className="text-muted">hops</span>
+      <div className="flex overflow-hidden rounded border border-border">
+        {[1, 2, 3, null].map((d) => (
+          <button
+            key={d ?? "all"}
+            type="button"
+            onClick={() => onDepth(d)}
+            className={cn(seg, depth === d ? on : off)}
+          >
+            {d ?? "all"}
+          </button>
+        ))}
+      </div>
+      <span className="text-muted">· {count - 1} related</span>
     </div>
   );
 }
