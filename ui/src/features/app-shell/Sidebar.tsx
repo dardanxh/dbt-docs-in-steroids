@@ -10,6 +10,7 @@ import {
 import type { ReactNode } from "react";
 import { useSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
+import { useSidebarSlot } from "./sidebar-slot";
 
 export type View = "lineage" | "analytics" | "quality" | "projects" | "settings";
 
@@ -23,13 +24,14 @@ const ITEMS: { view: View; label: string; icon: ReactNode }[] = [
 
 export function Sidebar({ view, onView }: { view: View; onView: (v: View) => void }) {
   const { settings, update } = useSettings();
+  const { register } = useSidebarSlot();
   const expanded = settings.sidebarExpanded;
 
   return (
     <nav
       className={cn(
         "flex flex-col border-border border-l bg-panel py-2 transition-[width] duration-150",
-        expanded ? "w-48" : "w-14",
+        expanded ? "w-60" : "w-14",
       )}
     >
       <button
@@ -62,6 +64,11 @@ export function Sidebar({ view, onView }: { view: View; onView: (v: View) => voi
           );
         })}
       </div>
+
+      {/* Contextual controls (e.g. the Lineage graph toolbar) portal in here. */}
+      {expanded && view === "lineage" && (
+        <div ref={register} className="mt-2 min-h-0 flex-1 overflow-y-auto" />
+      )}
     </nav>
   );
 }

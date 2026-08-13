@@ -8,6 +8,8 @@ import {
 } from "@xyflow/react";
 import { Crosshair, PanelRight, Scan, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useSidebarSlot } from "@/features/app-shell/sidebar-slot";
 import { hotspotColor, layerColor } from "@/lib/colors";
 import { useSettings, useThemeTokens } from "@/lib/settings";
 import { cn } from "@/lib/utils";
@@ -47,6 +49,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const { data: graph, isPending, error } = useGraph(projectId);
   const tokens = useThemeTokens();
   const { settings } = useSettings();
+  const { target: sidebarSlot } = useSidebarSlot();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [metric, setMetric] = useState<MetricKey>("downstream_count");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -299,6 +302,11 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
         nodesDraggable={false}
+        // Trackpad-native panning: two-finger scroll pans, pinch (or ⌘+scroll)
+        // zooms. Click-drag on the pane still pans too.
+        panOnScroll
+        zoomOnScroll={false}
+        panOnDrag
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={tokens.border} />
         <Controls showInteractive={false} />
@@ -316,14 +324,27 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
         )}
       </ReactFlow>
 
-      <Toolbar
-        metric={metric}
-        onMetric={setMetric}
-        coverage={graph.coverage}
-        collapsedCount={collapsed.size}
-        onExpandAll={() => setCollapsed(new Set())}
-        onCollapseAll={() => setCollapsed(new Set(graph.layers.map((l) => l.name)))}
-      />
+      {(() => {
+        const toolbar = (
+          <Toolbar
+            metric={metric}
+            onMetric={setMetric}
+            coverage={graph.coverage}
+            collapsedCount={collapsed.size}
+            onExpandAll={() => setCollapsed(new Set())}
+            onCollapseAll={() => setCollapsed(new Set(graph.layers.map((l) => l.name)))}
+          />
+        );
+        // Dock the controls into the right sidebar; fall back to a floating panel
+        // when the sidebar is collapsed (no slot).
+        return sidebarSlot ? (
+          createPortal(toolbar, sidebarSlot)
+        ) : (
+          <div className="absolute top-4 left-4 z-10 w-56 rounded-lg border border-border bg-panel/95 shadow-lg backdrop-blur">
+            {toolbar}
+          </div>
+        );
+      })()}
 
       <LayerOrderBar
         order={layerOrder ?? graph.layers.map((l) => l.name)}
@@ -507,13 +528,14 @@ function Toolbar({
   onCollapseAll: () => void;
 }) {
   return (
-    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 rounded-lg border border-border bg-panel/95 p-3 text-xs shadow-lg backdrop-blur">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-2 border-border border-t px-3 py-3 text-xs">
+      <div className="font-medium text-[10px] text-muted uppercase tracking-wide">Graph controls</div>
+      <div className="flex flex-col gap-1">
         <span className="text-muted">Color by</span>
         <select
           value={metric}
           onChange={(e) => onMetric(e.target.value as MetricKey)}
-          className="rounded border border-border bg-panel-2 px-2 py-1 text-fg outline-none"
+          className="w-full rounded border border-border bg-panel-2 px-2 py-1 text-fg outline-none"
         >
           {METRICS.map((m) => (
             <option key={m.key} value={m.key}>

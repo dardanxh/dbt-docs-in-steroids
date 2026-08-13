@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AnalyticsDashboard } from "@/features/analytics/AnalyticsDashboard";
 import { Sidebar, type View } from "@/features/app-shell/Sidebar";
+import { SidebarSlotProvider } from "@/features/app-shell/sidebar-slot";
 import { ThemeToggle } from "@/features/app-shell/ThemeToggle";
 import { CommandPalette } from "@/features/command/CommandPalette";
 import { LineageView } from "@/features/lineage/LineageView";
@@ -64,26 +65,28 @@ export function App() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <main className="min-w-0 flex-1">
-          {!projectId && view !== "projects" && view !== "settings" ? (
-            <Empty onGoProjects={() => setView("projects")} />
-          ) : view === "lineage" && projectId ? (
-            <LineageView projectId={projectId} focusNodeId={nodeId} />
-          ) : view === "analytics" && projectId ? (
-            <AnalyticsDashboard projectId={projectId} />
-          ) : view === "quality" && projectId ? (
-            <QualityView projectId={projectId} onOpenNode={openNode} />
-          ) : view === "projects" ? (
-            <ProjectsView activeId={projectId} onOpen={openProject} />
-          ) : view === "settings" ? (
-            <SettingsView />
-          ) : (
-            <Empty onGoProjects={() => setView("projects")} />
-          )}
-        </main>
-        <Sidebar view={view} onView={setView} />
-      </div>
+      <SidebarSlotProvider>
+        <div className="flex min-h-0 flex-1">
+          <main className="min-w-0 flex-1">
+            {!projectId && view !== "projects" && view !== "settings" ? (
+              <Empty onGoProjects={() => setView("projects")} />
+            ) : view === "lineage" && projectId ? (
+              <LineageView projectId={projectId} focusNodeId={nodeId} />
+            ) : view === "analytics" && projectId ? (
+              <AnalyticsDashboard projectId={projectId} />
+            ) : view === "quality" && projectId ? (
+              <QualityView projectId={projectId} onOpenNode={openNode} />
+            ) : view === "projects" ? (
+              <ProjectsView activeId={projectId} onOpen={openProject} />
+            ) : view === "settings" ? (
+              <SettingsView />
+            ) : (
+              <Empty onGoProjects={() => setView("projects")} />
+            )}
+          </main>
+          <Sidebar view={view} onView={setView} />
+        </div>
+      </SidebarSlotProvider>
 
       <CommandPalette projectId={projectId} onOpenNode={openNode} />
     </div>
