@@ -16,11 +16,11 @@ await page.waitForTimeout(300);
 const menuVisible = await page.getByText("View columns & details").count();
 await page.screenshot({ path: "/tmp/demo-context-menu.png" });
 
-// Click "Focus lineage" in the menu.
-await page.getByText("Focus lineage").first().click();
+// Click "Focus in new tab" in the menu.
+await page.getByText("Focus in new tab").first().click();
 await page.waitForTimeout(900);
 const after = await page.locator(".react-flow__node-model").count();
-const focused = await page.locator("text=Focused on").count();
+const focused = await page.locator('button[title="Close tab"]').count();
 
 // Now right-click another node and open its columns panel.
 await page.locator(".react-flow__node-model").first().click({ button: "right", force: true });

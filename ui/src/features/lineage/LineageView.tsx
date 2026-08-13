@@ -38,6 +38,14 @@ interface Trace {
   rootColumn: string;
 }
 
+interface FocusTab {
+  key: string; // "all" or the focused node id
+  focusId: string | null; // null for the All tab
+  label: string;
+}
+
+const ALL_TAB: FocusTab = { key: "all", focusId: null, label: "All" };
+
 export function LineageView({ projectId, focusNodeId }: { projectId: string; focusNodeId?: string | null }) {
   const { data: graph, isPending, error } = useGraph(projectId);
   const tokens = useThemeTokens();
@@ -47,8 +55,26 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const [metric, setMetric] = useState<MetricKey>("downstream_count");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [trace, setTrace] = useState<Trace | null>(null);
-  const [focusId, setFocusId] = useState<string | null>(null);
+  // Focus tabs: "All" (never closeable) + one closeable tab per focused module,
+  // each rendering only that module's lineage subgraph.
+  const [tabs, setTabs] = useState<FocusTab[]>([ALL_TAB]);
+  const [activeKey, setActiveKey] = useState("all");
+  const activeTab = tabs.find((t) => t.key === activeKey) ?? tabs[0];
+  const focusId = activeTab.focusId;
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string; name: string } | null>(null);
+
+  const openFocus = useCallback((nodeId: string, label: string) => {
+    setTabs((prev) =>
+      prev.some((t) => t.key === nodeId) ? prev : [...prev, { key: nodeId, focusId: nodeId, label }],
+    );
+    setActiveKey(nodeId);
+    setTrace(null);
+  }, []);
+
+  const closeTab = useCallback((key: string) => {
+    setTabs((prev) => prev.filter((t) => t.key !== key));
+    setActiveKey((cur) => (cur === key ? "all" : cur));
+  }, []);
   const [layerOrder, setLayerOrder] = useState<string[] | null>(null);
   const [search, setSearch] = useState("");
   const [testFilter, setTestFilter] = useState<"all" | "untested" | "tested">("all");
@@ -61,6 +87,8 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       initializedFor.current = projectId;
       setCollapsed(new Set(graph.layers.filter((l) => l.node_ids.length > 50).map((l) => l.name)));
       setLayerOrder(graph.layers.map((l) => l.name));
+      setTabs([ALL_TAB]);
+      setActiveKey("all");
     }
   }, [graph, projectId]);
 
@@ -185,8 +213,6 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     return set;
   }, [focusId, adjacency]);
 
-  const focusName = focusId ? (graph?.nodes.find((n) => n.id === focusId)?.name ?? focusId) : null;
-
   // Column-usage fractions for the selected node's neighbours.
   const { data: usage } = useColumnUsage(projectId, selectedNodeId);
 
@@ -279,162 +305,204 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   if (!graph) return null;
 
   return (
-    <div className="relative h-full w-full">
-      <ReactFlow
-        key={focusId ?? "all"}
-        nodes={layout.nodes}
-        edges={layout.edges}
-        nodeTypes={NODE_TYPES}
-        onNodeClick={onNodeClick}
-        onNodeContextMenu={onNodeContextMenu}
-        onPaneClick={() => setMenu(null)}
-        onMoveStart={() => setMenu(null)}
-        fitView
-        fitViewOptions={{ padding: 0.15, maxZoom: 1.2 }}
-        minZoom={0.05}
-        maxZoom={2}
-        proOptions={{ hideAttribution: true }}
-        nodesDraggable={false}
-        // Trackpad-native panning: two-finger scroll pans, pinch (or ⌘+scroll)
-        // zooms. Click-drag on the pane still pans too.
-        panOnScroll
-        zoomOnScroll={false}
-        panOnDrag
-      >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={tokens.border} />
-        <Controls showInteractive={false} />
-      </ReactFlow>
+    <div className="flex h-full w-full flex-col">
+      <TabBar tabs={tabs} activeKey={activeKey} onSelect={setActiveKey} onClose={closeTab} />
+      <div className="relative min-h-0 flex-1">
+        <ReactFlow
+          key={activeKey}
+          nodes={layout.nodes}
+          edges={layout.edges}
+          nodeTypes={NODE_TYPES}
+          onNodeClick={onNodeClick}
+          onNodeContextMenu={onNodeContextMenu}
+          onPaneClick={() => setMenu(null)}
+          onMoveStart={() => setMenu(null)}
+          fitView
+          fitViewOptions={{ padding: 0.15, maxZoom: 1.2 }}
+          minZoom={0.05}
+          maxZoom={2}
+          proOptions={{ hideAttribution: true }}
+          nodesDraggable={false}
+          // Trackpad-native panning: two-finger scroll pans, pinch (or ⌘+scroll)
+          // zooms. Click-drag on the pane still pans too.
+          panOnScroll
+          zoomOnScroll={false}
+          panOnDrag
+        >
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={tokens.border} />
+          <Controls showInteractive={false} />
+        </ReactFlow>
 
-      {(() => {
-        const toolbar = (
-          <Toolbar
-            metric={metric}
-            onMetric={setMetric}
-            coverage={graph.coverage}
-            collapsedCount={collapsed.size}
-            onExpandAll={() => setCollapsed(new Set())}
-            onCollapseAll={() => setCollapsed(new Set(graph.layers.map((l) => l.name)))}
-          />
-        );
-        // Dock the controls into the right sidebar; fall back to a floating panel
-        // when the sidebar is collapsed (no slot).
-        return sidebarSlot ? (
-          createPortal(toolbar, sidebarSlot)
-        ) : (
-          <div className="absolute top-4 left-4 z-10 w-56 rounded-lg border border-border bg-panel/95 shadow-lg backdrop-blur">
-            {toolbar}
-          </div>
-        );
-      })()}
-
-      <LayerOrderBar
-        order={layerOrder ?? graph.layers.map((l) => l.name)}
-        onReorder={reorderLayers}
-        onReset={() => setLayerOrder(graph.layers.map((l) => l.name))}
-        canReset={!!layerOrder && layerOrder.join() !== graph.layers.map((l) => l.name).join()}
-      />
-
-      <div className="-translate-x-1/2 absolute top-4 left-1/2 z-10 flex flex-col items-center gap-2">
-        <SearchBar
-          search={search}
-          onSearch={setSearch}
-          testFilter={testFilter}
-          onTestFilter={setTestFilter}
-          matchCount={filterMatch?.size ?? null}
-        />
-        {focusId && (
-          <div className="rounded-md border border-sky-500/40 bg-panel/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur">
-            Focused on <span className="font-semibold text-sky-400">{focusName}</span> ·{" "}
-            {(focusSet?.size ?? 1) - 1} related node(s) ·{" "}
-            <button type="button" className="ml-1 text-muted underline" onClick={() => setFocusId(null)}>
-              show all
-            </button>
-          </div>
-        )}
-        {trace && (
-          <div className="rounded-md border border-border bg-panel/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur">
-            Tracing <span className="font-semibold text-accent">{trace.rootColumn}</span> ·{" "}
-            {trace.lineage.source_columns.length} source column(s) ·{" "}
-            {trace.lineage.partial && <span className="text-amber-400">partial </span>}
-            <button type="button" className="ml-2 text-muted underline" onClick={() => setTrace(null)}>
-              clear
-            </button>
-          </div>
-        )}
-      </div>
-
-      {menu && (
-        <>
-          {/* click-away catcher */}
-          <button
-            type="button"
-            aria-label="Close menu"
-            className="fixed inset-0 z-30 cursor-default"
-            onClick={() => setMenu(null)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setMenu(null);
-            }}
-          />
-          <div
-            className="fixed z-40 min-w-[200px] overflow-hidden rounded-md border border-border bg-panel py-1 text-xs shadow-xl"
-            style={{ left: menu.x, top: menu.y }}
-          >
-            <div className="truncate border-border border-b px-3 py-1.5 font-medium text-muted">
-              {menu.name}
+        {(() => {
+          const toolbar = (
+            <Toolbar
+              metric={metric}
+              onMetric={setMetric}
+              coverage={graph.coverage}
+              collapsedCount={collapsed.size}
+              onExpandAll={() => setCollapsed(new Set())}
+              onCollapseAll={() => setCollapsed(new Set(graph.layers.map((l) => l.name)))}
+            />
+          );
+          // Dock the controls into the right sidebar; fall back to a floating panel
+          // when the sidebar is collapsed (no slot).
+          return sidebarSlot ? (
+            createPortal(toolbar, sidebarSlot)
+          ) : (
+            <div className="absolute top-4 left-4 z-10 w-56 rounded-lg border border-border bg-panel/95 shadow-lg backdrop-blur">
+              {toolbar}
             </div>
-            <MenuItem
-              icon={<PanelRight size={13} />}
-              label="View columns & details"
-              onClick={() => {
-                setSelectedNodeId(menu.nodeId);
-                setTrace(null);
+          );
+        })()}
+
+        <LayerOrderBar
+          order={layerOrder ?? graph.layers.map((l) => l.name)}
+          onReorder={reorderLayers}
+          onReset={() => setLayerOrder(graph.layers.map((l) => l.name))}
+          canReset={!!layerOrder && layerOrder.join() !== graph.layers.map((l) => l.name).join()}
+        />
+
+        <div className="-translate-x-1/2 absolute top-4 left-1/2 z-10 flex flex-col items-center gap-2">
+          <SearchBar
+            search={search}
+            onSearch={setSearch}
+            testFilter={testFilter}
+            onTestFilter={setTestFilter}
+            matchCount={filterMatch?.size ?? null}
+          />
+          {trace && (
+            <div className="rounded-md border border-border bg-panel/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur">
+              Tracing <span className="font-semibold text-accent">{trace.rootColumn}</span> ·{" "}
+              {trace.lineage.source_columns.length} source column(s) ·{" "}
+              {trace.lineage.partial && <span className="text-amber-400">partial </span>}
+              <button type="button" className="ml-2 text-muted underline" onClick={() => setTrace(null)}>
+                clear
+              </button>
+            </div>
+          )}
+        </div>
+
+        {menu && (
+          <>
+            {/* click-away catcher */}
+            <button
+              type="button"
+              aria-label="Close menu"
+              className="fixed inset-0 z-30 cursor-default"
+              onClick={() => setMenu(null)}
+              onContextMenu={(e) => {
+                e.preventDefault();
                 setMenu(null);
               }}
             />
-            <MenuItem
-              icon={<Crosshair size={13} />}
-              label={focusId === menu.nodeId ? "Re-focus lineage" : "Focus lineage"}
-              onClick={() => {
-                setTrace(null);
-                setFocusId(menu.nodeId);
-                setMenu(null);
-              }}
-            />
-            {focusId && (
+            <div
+              className="fixed z-40 min-w-[200px] overflow-hidden rounded-md border border-border bg-panel py-1 text-xs shadow-xl"
+              style={{ left: menu.x, top: menu.y }}
+            >
+              <div className="truncate border-border border-b px-3 py-1.5 font-medium text-muted">
+                {menu.name}
+              </div>
               <MenuItem
-                icon={<Scan size={13} />}
-                label="Show all (exit focus)"
+                icon={<PanelRight size={13} />}
+                label="View columns & details"
                 onClick={() => {
-                  setFocusId(null);
+                  setSelectedNodeId(menu.nodeId);
+                  setTrace(null);
                   setMenu(null);
                 }}
               />
+              <MenuItem
+                icon={<Crosshair size={13} />}
+                label={tabs.some((t) => t.key === menu.nodeId) ? "Go to focus tab" : "Focus in new tab"}
+                onClick={() => {
+                  openFocus(menu.nodeId, menu.name);
+                  setMenu(null);
+                }}
+              />
+              {focusId && (
+                <MenuItem
+                  icon={<Scan size={13} />}
+                  label="Back to All tab"
+                  onClick={() => {
+                    setActiveKey("all");
+                    setMenu(null);
+                  }}
+                />
+              )}
+            </div>
+          </>
+        )}
+
+        {selectedNodeId && (
+          <NodePanel
+            projectId={projectId}
+            nodeId={selectedNodeId}
+            onClose={() => {
+              setSelectedNodeId(null);
+              setTrace(null);
+            }}
+            onTrace={(lineage, rootColumn) => setTraceAndReveal({ lineage, rootColumn })}
+            onSelectNode={(id) => {
+              setSelectedNodeId(id);
+              setTrace(null);
+            }}
+            onFocus={(id) => {
+              const n = graph.nodes.find((x) => x.id === id);
+              openFocus(id, n?.name ?? id);
+            }}
+            isFocused={focusId === selectedNodeId}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TabBar({
+  tabs,
+  activeKey,
+  onSelect,
+  onClose,
+}: {
+  tabs: FocusTab[];
+  activeKey: string;
+  onSelect: (k: string) => void;
+  onClose: (k: string) => void;
+}) {
+  if (tabs.length <= 1) return null; // only the All tab — no bar needed
+  return (
+    <div className="flex items-center gap-1 border-border border-b bg-panel px-2 py-1 text-xs">
+      {tabs.map((t) => {
+        const active = t.key === activeKey;
+        return (
+          <div
+            key={t.key}
+            className={cn(
+              "flex items-center gap-1 rounded-md px-2 py-1",
+              active ? "bg-panel-2 text-fg" : "text-muted hover:text-fg",
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => onSelect(t.key)}
+              className="flex max-w-[180px] items-center gap-1 truncate"
+            >
+              {t.key !== "all" && <Crosshair size={11} className="shrink-0" />}
+              <span className="truncate">{t.label}</span>
+            </button>
+            {t.key !== "all" && (
+              <button
+                type="button"
+                onClick={() => onClose(t.key)}
+                title="Close tab"
+                className="text-muted hover:text-fg"
+              >
+                <X size={11} />
+              </button>
             )}
           </div>
-        </>
-      )}
-
-      {selectedNodeId && (
-        <NodePanel
-          projectId={projectId}
-          nodeId={selectedNodeId}
-          onClose={() => {
-            setSelectedNodeId(null);
-            setTrace(null);
-          }}
-          onTrace={(lineage, rootColumn) => setTraceAndReveal({ lineage, rootColumn })}
-          onSelectNode={(id) => {
-            setSelectedNodeId(id);
-            setTrace(null);
-          }}
-          onFocus={(id) => {
-            setTrace(null);
-            setFocusId(id);
-          }}
-          isFocused={focusId === selectedNodeId}
-        />
-      )}
+        );
+      })}
     </div>
   );
 }
