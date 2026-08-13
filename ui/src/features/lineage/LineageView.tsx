@@ -1,11 +1,4 @@
-import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  MiniMap,
-  ReactFlow,
-  type Node as RFNode,
-} from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode } from "@xyflow/react";
 import { Crosshair, PanelRight, Scan, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -310,18 +303,6 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={tokens.border} />
         <Controls showInteractive={false} />
-        {settings.minimap && (
-          <MiniMap
-            pannable
-            zoomable
-            style={{ background: tokens.panel2 }}
-            maskColor={`color-mix(in srgb, ${tokens.bg} 65%, transparent)`}
-            nodeColor={(n) => {
-              const layer = (n.data as { layer?: string })?.layer;
-              return layer ? layerColor(layer) : tokens.border;
-            }}
-          />
-        )}
       </ReactFlow>
 
       {(() => {

@@ -14,7 +14,6 @@ export interface UISettings {
   theme: ThemePref;
   badgeMetric: BadgeMetric;
   showColumnFractions: boolean;
-  minimap: boolean;
   sidebarExpanded: boolean;
 }
 
@@ -22,7 +21,6 @@ const DEFAULTS: UISettings = {
   theme: "dark",
   badgeMetric: "loc",
   showColumnFractions: true,
-  minimap: true,
   sidebarExpanded: true,
 };
 

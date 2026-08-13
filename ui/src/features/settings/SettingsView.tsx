@@ -51,9 +51,6 @@ export function SettingsView() {
             onChange={(v) => update({ showColumnFractions: v })}
           />
         </Row>
-        <Row label="Minimap" hint="Show the React Flow minimap in the lineage canvas.">
-          <Toggle checked={settings.minimap} onChange={(v) => update({ minimap: v })} />
-        </Row>
       </Section>
     </div>
   );
