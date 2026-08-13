@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { Crosshair, X } from "lucide-react";
 import { useState } from "react";
 import { apiGet } from "@/lib/api";
 import { layerColor, TRANSFORM_COLORS } from "@/lib/colors";
@@ -14,12 +14,16 @@ export function NodePanel({
   onClose,
   onTrace,
   onSelectNode,
+  onFocus,
+  isFocused,
 }: {
   projectId: string;
   nodeId: string;
   onClose: () => void;
   onTrace: (lineage: ColumnLineage, rootColumn: string) => void;
   onSelectNode: (id: string) => void;
+  onFocus: (id: string) => void;
+  isFocused: boolean;
 }) {
   const { data: node, isPending } = useNodeDetail(projectId, nodeId);
   const [activeColumn, setActiveColumn] = useState<string | null>(null);
@@ -55,9 +59,27 @@ export function NodePanel({
             </>
           )}
         </div>
-        <button type="button" onClick={onClose} className="text-muted hover:text-fg">
-          <X size={16} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onFocus(nodeId)}
+            title="Focus — isolate this model's lineage"
+            className={cn(
+              "rounded p-1 hover:bg-panel-2",
+              isFocused ? "text-sky-400" : "text-muted hover:text-fg",
+            )}
+          >
+            <Crosshair size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close"
+            className="rounded p-1 text-muted hover:text-fg"
+          >
+            <X size={16} />
+          </button>
+        </div>
       </header>
 
       {isPending || !node ? (

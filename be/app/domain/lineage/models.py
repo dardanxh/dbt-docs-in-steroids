@@ -33,6 +33,7 @@ class Node(Base):
     file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    raw_code: Mapped[str | None] = mapped_column(Text, nullable=True)  # model SQL (for the code viewer)
 
     # Hotspot metrics (computed from the node graph). Stored as columns so the
     # API can sort/filter without deserializing JSON.
@@ -43,6 +44,13 @@ class Node(Base):
     degree_centrality: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     betweenness: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     hotspot_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    # Code / quality metrics (heuristics).
+    loc: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    complexity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cohesion: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    test_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     column_lineage_status: Mapped[str | None] = mapped_column(String(20), nullable=True)  # ok | partial | failed
 

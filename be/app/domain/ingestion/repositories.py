@@ -51,6 +51,7 @@ class LineagePersistenceRepository:
                     "file_path": node.file_path,
                     "description": node.description,
                     "tags": node.tags,
+                    "raw_code": node.raw_code,
                     "fan_in": m.fan_in,
                     "fan_out": m.fan_out,
                     "upstream_count": m.upstream_count,
@@ -58,6 +59,11 @@ class LineagePersistenceRepository:
                     "degree_centrality": m.degree_centrality,
                     "betweenness": m.betweenness,
                     "hotspot_score": m.hotspot_score,
+                    "loc": m.loc,
+                    "complexity": m.complexity,
+                    "cohesion": m.cohesion,
+                    "test_count": m.test_count,
+                    "column_count": m.column_count,
                     "column_lineage_status": status_by_node.get(node.unique_id),
                 }
             )

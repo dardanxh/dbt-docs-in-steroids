@@ -11,6 +11,11 @@ class NodeMetricsOut(BaseModel):
     degree_centrality: float
     betweenness: float
     hotspot_score: float
+    loc: int
+    complexity: float
+    cohesion: float
+    test_count: int
+    column_count: int
 
 
 class GraphNodeOut(BaseModel):
@@ -72,6 +77,18 @@ class NodeDetailOut(BaseModel):
     parents: list[str]
     children: list[str]
     column_lineage_status: str | None
+    sql: str | None  # raw model SQL (for the code viewer)
+
+
+class ColumnUsageItem(BaseModel):
+    node_id: str
+    used: int  # distinct columns of the shared source consumed across this edge
+    total: int  # total columns of that source
+
+
+class ColumnUsageOut(BaseModel):
+    upstream: list[ColumnUsageItem]  # parents feeding this node: used/total of the parent
+    downstream: list[ColumnUsageItem]  # children consuming this node: used/total of this node
 
 
 class ColumnLite(BaseModel):

@@ -45,6 +45,17 @@ def test_hotspot_metrics_populated(graph):
     assert 0.0 <= top.metrics.hotspot_score <= 1.0
 
 
+def test_code_metrics_populated(graph):
+    from app.core.enums import ResourceType
+
+    models = [n for n in graph.nodes.values() if n.resource_type == ResourceType.MODEL]
+    assert any(m.metrics.loc > 0 for m in models)
+    assert all(0.0 <= m.metrics.cohesion <= 1.0 for m in models)
+    assert all(m.metrics.column_count == len(m.columns) for m in graph.nodes.values())
+    # tests link to models via depends_on, so at least some models have a test_count
+    assert sum(m.metrics.test_count for m in models) > 0
+
+
 def test_column_lineage_produces_edges(graph):
     edges, diagnostics = build_column_edges(graph)
     assert len(diagnostics) > 0  # one per model

@@ -7,6 +7,7 @@ from app.dependencies.database import get_session
 from app.domain.lineage.schemas import (
     ColumnLineageResponse,
     ColumnLite,
+    ColumnUsageOut,
     GraphResponse,
     MetricValueOut,
     NodeDetailOut,
@@ -38,6 +39,11 @@ def get_node(project_id: str, node_id: str, session: Session = Depends(get_sessi
 @router.get("/nodes/{node_id}/columns", response_model=list[ColumnLite])
 def get_node_columns(project_id: str, node_id: str, session: Session = Depends(get_session)) -> list[ColumnLite]:
     return LineageService(session).node_columns(project_id, node_id)
+
+
+@router.get("/nodes/{node_id}/column-usage", response_model=ColumnUsageOut)
+def get_node_column_usage(project_id: str, node_id: str, session: Session = Depends(get_session)) -> ColumnUsageOut:
+    return LineageService(session).column_usage(project_id, node_id)
 
 
 @router.get("/nodes/{node_id}/columns/{column}/lineage", response_model=ColumnLineageResponse)

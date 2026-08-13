@@ -30,6 +30,12 @@ class NodeMetrics:
     degree_centrality: float = 0.0
     betweenness: float = 0.0
     hotspot_score: float = 0.0
+    # Code / quality metrics (heuristics — see graph_builder._compute_code_metrics).
+    loc: int = 0  # non-blank lines of raw_code
+    complexity: float = 0.0  # weighted SQL construct count
+    cohesion: float = 0.0  # 0..1, input concentration proxy (higher = fewer upstreams)
+    test_count: int = 0  # tests referencing this node
+    column_count: int = 0  # number of columns
 
 
 @dataclass

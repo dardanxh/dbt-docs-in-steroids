@@ -162,6 +162,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/nodes/{node_id}/column-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Node Column Usage */
+        get: operations["get_node_column_usage_api_v1_projects__project_id__nodes__node_id__column_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/nodes/{node_id}/columns/{column}/lineage": {
         parameters: {
             query?: never;
@@ -292,6 +309,22 @@ export interface components {
             /** Layer */
             layer: string;
         };
+        /** ColumnUsageItem */
+        ColumnUsageItem: {
+            /** Node Id */
+            node_id: string;
+            /** Used */
+            used: number;
+            /** Total */
+            total: number;
+        };
+        /** ColumnUsageOut */
+        ColumnUsageOut: {
+            /** Upstream */
+            upstream: components["schemas"]["ColumnUsageItem"][];
+            /** Downstream */
+            downstream: components["schemas"]["ColumnUsageItem"][];
+        };
         /** CreateProject */
         CreateProject: {
             /** Name */
@@ -416,6 +449,8 @@ export interface components {
             children: string[];
             /** Column Lineage Status */
             column_lineage_status: string | null;
+            /** Sql */
+            sql: string | null;
         };
         /** NodeMetricsOut */
         NodeMetricsOut: {
@@ -433,6 +468,16 @@ export interface components {
             betweenness: number;
             /** Hotspot Score */
             hotspot_score: number;
+            /** Loc */
+            loc: number;
+            /** Complexity */
+            complexity: number;
+            /** Cohesion */
+            cohesion: number;
+            /** Test Count */
+            test_count: number;
+            /** Column Count */
+            column_count: number;
         };
         /** ProjectResult */
         ProjectResult: {
@@ -797,6 +842,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ColumnLite"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_node_column_usage_api_v1_projects__project_id__nodes__node_id__column_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ColumnUsageOut"];
                 };
             };
             /** @description Validation Error */

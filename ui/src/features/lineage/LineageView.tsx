@@ -1,6 +1,8 @@
 import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode } from "@xyflow/react";
+import { Crosshair, PanelRight, Scan } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { hotspotColor } from "@/lib/colors";
+import { hotspotColor, layerColor } from "@/lib/colors";
+import { cn } from "@/lib/utils";
 import type { ColumnLineage, MetricKey } from "@/types";
 import { useGraph } from "./api";
 import { computeLayout } from "./layout";
@@ -29,6 +31,9 @@ export function LineageView({ projectId }: { projectId: string }) {
   const [metric, setMetric] = useState<MetricKey>("downstream_count");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [trace, setTrace] = useState<Trace | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string; name: string } | null>(null);
+  const [layerOrder, setLayerOrder] = useState<string[] | null>(null);
 
   // On first load, collapse oversized layers (e.g. 200+ sources) so the swimlane
   // graph fits the viewport instead of stretching thousands of px tall.
@@ -37,15 +42,57 @@ export function LineageView({ projectId }: { projectId: string }) {
     if (graph && initializedFor.current !== projectId) {
       initializedFor.current = projectId;
       setCollapsed(new Set(graph.layers.filter((l) => l.node_ids.length > 50).map((l) => l.name)));
+      setLayerOrder(graph.layers.map((l) => l.name));
     }
   }, [graph, projectId]);
 
-  const highlight = useMemo(() => {
-    if (!trace) return { nodes: undefined, edges: undefined };
-    const nodes = new Set<string>(trace.lineage.columns.map((c) => c.node_id));
-    const edges = new Set<string>(trace.lineage.edges.map((e) => `${e.src.node_id}->${e.dst.node_id}`));
+  // Node adjacency (direct parents/children) from the edge list — reused by the
+  // selection highlight and by focus mode.
+  const adjacency = useMemo(() => {
+    const parents = new Map<string, string[]>();
+    const children = new Map<string, string[]>();
+    const push = (m: Map<string, string[]>, k: string, v: string) => {
+      const arr = m.get(k);
+      if (arr) arr.push(v);
+      else m.set(k, [v]);
+    };
+    if (graph) {
+      for (const e of graph.edges) {
+        push(parents, e.dst, e.src);
+        push(children, e.src, e.dst);
+      }
+    }
+    return { parents, children };
+  }, [graph]);
+
+  // Clicking a model highlights it + its direct inputs/dependents (one hop) and
+  // the arrows in/out of it; everything else dims.
+  const selectionHighlight = useMemo(() => {
+    if (!selectedNodeId) return null;
+    const nodes = new Set<string>([selectedNodeId]);
+    const edges = new Set<string>();
+    for (const p of adjacency.parents.get(selectedNodeId) ?? []) {
+      nodes.add(p);
+      edges.add(`${p}->${selectedNodeId}`);
+    }
+    for (const c of adjacency.children.get(selectedNodeId) ?? []) {
+      nodes.add(c);
+      edges.add(`${selectedNodeId}->${c}`);
+    }
     return { nodes, edges };
-  }, [trace]);
+  }, [selectedNodeId, adjacency]);
+
+  // A column trace (if active) takes priority over the node-neighbor highlight.
+  const highlight = useMemo(() => {
+    if (trace) {
+      return {
+        nodes: new Set<string>(trace.lineage.columns.map((c) => c.node_id)),
+        edges: new Set<string>(trace.lineage.edges.map((e) => `${e.src.node_id}->${e.dst.node_id}`)),
+      };
+    }
+    if (selectionHighlight) return selectionHighlight;
+    return { nodes: undefined, edges: undefined };
+  }, [trace, selectionHighlight]);
 
   // A trace often reaches into a collapsed layer (e.g. sources). Expand any
   // layer that contains a highlighted node so the path is actually visible.
@@ -64,15 +111,56 @@ export function LineageView({ projectId }: { projectId: string }) {
     [graph],
   );
 
+  // Focus mode: the focused model + all its transitive ancestors and descendants.
+  // Everything else is hidden (see computeLayout's focusIds filter).
+  const focusSet = useMemo(() => {
+    if (!focusId) return null;
+    const set = new Set<string>([focusId]);
+    const walk = (adj: Map<string, string[]>) => {
+      const queue = [focusId];
+      while (queue.length) {
+        const cur = queue.shift();
+        if (cur === undefined) break;
+        for (const next of adj.get(cur) ?? []) {
+          if (!set.has(next)) {
+            set.add(next);
+            queue.push(next);
+          }
+        }
+      }
+    };
+    walk(adjacency.parents);
+    walk(adjacency.children);
+    return set;
+  }, [focusId, adjacency]);
+
+  const focusName = focusId ? (graph?.nodes.find((n) => n.id === focusId)?.name ?? focusId) : null;
+
   const layout = useMemo(() => {
     if (!graph) return { nodes: [], edges: [] };
     return computeLayout(graph, {
-      collapsed,
+      collapsed: focusId ? new Set<string>() : collapsed,
       metric,
       highlightNodes: highlight.nodes,
       activeEdges: highlight.edges,
+      focusIds: focusSet,
+      layerOrder: layerOrder ?? undefined,
     });
-  }, [graph, collapsed, metric, highlight]);
+  }, [graph, collapsed, metric, highlight, focusId, focusSet, layerOrder]);
+
+  const reorderLayers = useCallback(
+    (from: number, to: number) => {
+      setLayerOrder((prev) => {
+        const base = prev ?? graph?.layers.map((l) => l.name) ?? [];
+        if (from < 0 || from >= base.length || to < 0 || to >= base.length) return base;
+        const next = [...base];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        return next;
+      });
+    },
+    [graph],
+  );
 
   const toggleLayer = useCallback((layer: string) => {
     setCollapsed((prev) => {
@@ -84,9 +172,8 @@ export function LineageView({ projectId }: { projectId: string }) {
 
   const onNodeClick = useCallback(
     (_: unknown, node: RFNode) => {
-      if (node.type === "header") {
-        toggleLayer((node.data as { layer: string }).layer);
-      } else if (node.type === "collapsed") {
+      setMenu(null);
+      if (node.type === "header" || node.type === "collapsed") {
         toggleLayer((node.data as { layer: string }).layer);
       } else if (node.type === "model") {
         setSelectedNodeId(node.id);
@@ -96,6 +183,18 @@ export function LineageView({ projectId }: { projectId: string }) {
     [toggleLayer],
   );
 
+  // Right-click a model → context menu (focus / view columns).
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: RFNode) => {
+    if (node.type !== "model") return;
+    event.preventDefault();
+    setMenu({
+      x: Math.min(event.clientX, window.innerWidth - 210),
+      y: Math.min(event.clientY, window.innerHeight - 130),
+      nodeId: node.id,
+      name: (node.data as { label: string }).label,
+    });
+  }, []);
+
   if (isPending) return <Centered>Loading graph…</Centered>;
   if (error) return <Centered>Failed to load graph. Is the project ingested?</Centered>;
   if (!graph) return null;
@@ -103,10 +202,14 @@ export function LineageView({ projectId }: { projectId: string }) {
   return (
     <div className="relative h-full w-full">
       <ReactFlow
+        key={focusId ?? "all"}
         nodes={layout.nodes}
         edges={layout.edges}
         nodeTypes={NODE_TYPES}
         onNodeClick={onNodeClick}
+        onNodeContextMenu={onNodeContextMenu}
+        onPaneClick={() => setMenu(null)}
+        onMoveStart={() => setMenu(null)}
         fitView
         fitViewOptions={{ padding: 0.15, maxZoom: 1.2 }}
         minZoom={0.05}
@@ -127,15 +230,85 @@ export function LineageView({ projectId }: { projectId: string }) {
         onCollapseAll={() => setCollapsed(new Set(graph.layers.map((l) => l.name)))}
       />
 
-      {trace && (
-        <div className="absolute top-4 left-1/2 z-10 -translate-x-1/2 rounded-md border border-border bg-panel/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur">
-          Tracing <span className="font-semibold text-accent">{trace.rootColumn}</span> ·{" "}
-          {trace.lineage.source_columns.length} source column(s) ·{" "}
-          {trace.lineage.partial && <span className="text-amber-400">partial </span>}
-          <button type="button" className="ml-2 text-muted underline" onClick={() => setTrace(null)}>
-            clear
-          </button>
-        </div>
+      <LayerOrderBar
+        order={layerOrder ?? graph.layers.map((l) => l.name)}
+        onReorder={reorderLayers}
+        onReset={() => setLayerOrder(graph.layers.map((l) => l.name))}
+        canReset={!!layerOrder && layerOrder.join() !== graph.layers.map((l) => l.name).join()}
+      />
+
+      <div className="-translate-x-1/2 absolute top-4 left-1/2 z-10 flex flex-col items-center gap-2">
+        {focusId && (
+          <div className="rounded-md border border-sky-500/40 bg-panel/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur">
+            Focused on <span className="font-semibold text-sky-400">{focusName}</span> ·{" "}
+            {(focusSet?.size ?? 1) - 1} related node(s) ·{" "}
+            <button type="button" className="ml-1 text-muted underline" onClick={() => setFocusId(null)}>
+              show all
+            </button>
+          </div>
+        )}
+        {trace && (
+          <div className="rounded-md border border-border bg-panel/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur">
+            Tracing <span className="font-semibold text-accent">{trace.rootColumn}</span> ·{" "}
+            {trace.lineage.source_columns.length} source column(s) ·{" "}
+            {trace.lineage.partial && <span className="text-amber-400">partial </span>}
+            <button type="button" className="ml-2 text-muted underline" onClick={() => setTrace(null)}>
+              clear
+            </button>
+          </div>
+        )}
+      </div>
+
+      {menu && (
+        <>
+          {/* click-away catcher */}
+          <button
+            type="button"
+            aria-label="Close menu"
+            className="fixed inset-0 z-30 cursor-default"
+            onClick={() => setMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <div
+            className="fixed z-40 min-w-[200px] overflow-hidden rounded-md border border-border bg-panel py-1 text-xs shadow-xl"
+            style={{ left: menu.x, top: menu.y }}
+          >
+            <div className="truncate border-border border-b px-3 py-1.5 font-medium text-muted">
+              {menu.name}
+            </div>
+            <MenuItem
+              icon={<PanelRight size={13} />}
+              label="View columns & details"
+              onClick={() => {
+                setSelectedNodeId(menu.nodeId);
+                setTrace(null);
+                setMenu(null);
+              }}
+            />
+            <MenuItem
+              icon={<Crosshair size={13} />}
+              label={focusId === menu.nodeId ? "Re-focus lineage" : "Focus lineage"}
+              onClick={() => {
+                setTrace(null);
+                setFocusId(menu.nodeId);
+                setMenu(null);
+              }}
+            />
+            {focusId && (
+              <MenuItem
+                icon={<Scan size={13} />}
+                label="Show all (exit focus)"
+                onClick={() => {
+                  setFocusId(null);
+                  setMenu(null);
+                }}
+              />
+            )}
+          </div>
+        </>
       )}
 
       {selectedNodeId && (
@@ -151,6 +324,11 @@ export function LineageView({ projectId }: { projectId: string }) {
             setSelectedNodeId(id);
             setTrace(null);
           }}
+          onFocus={(id) => {
+            setTrace(null);
+            setFocusId(id);
+          }}
+          isFocused={focusId === selectedNodeId}
         />
       )}
     </div>
@@ -227,6 +405,78 @@ function Legend() {
       </div>
       <span className="text-muted">high</span>
     </div>
+  );
+}
+
+function LayerOrderBar({
+  order,
+  onReorder,
+  onReset,
+  canReset,
+}: {
+  order: string[];
+  onReorder: (from: number, to: number) => void;
+  onReset: () => void;
+  canReset: boolean;
+}) {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  return (
+    <div className="-translate-x-1/2 absolute bottom-4 left-1/2 z-10 flex items-center gap-2 rounded-lg border border-border bg-panel/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
+      <span className="text-muted">Layer order</span>
+      <span className="text-[10px] text-muted/60">(drag to reorder)</span>
+      <div className="flex items-center gap-1">
+        {order.map((name, i) => (
+          <button
+            key={name}
+            type="button"
+            draggable
+            onDragStart={() => setDragIndex(i)}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setOverIndex(i);
+            }}
+            onDrop={() => {
+              if (dragIndex !== null && dragIndex !== i) onReorder(dragIndex, i);
+              setDragIndex(null);
+              setOverIndex(null);
+            }}
+            onDragEnd={() => {
+              setDragIndex(null);
+              setOverIndex(null);
+            }}
+            className={cn(
+              "flex cursor-grab items-center gap-1.5 rounded border px-2 py-1 active:cursor-grabbing",
+              overIndex === i && dragIndex !== null && dragIndex !== i
+                ? "border-accent bg-panel-2"
+                : "border-border",
+              dragIndex === i && "opacity-40",
+            )}
+          >
+            <span className="h-2 w-2 rounded-sm" style={{ background: layerColor(name) }} />
+            <span className="text-fg">{name}</span>
+          </button>
+        ))}
+      </div>
+      {canReset && (
+        <button type="button" onClick={onReset} className="ml-1 text-muted underline">
+          reset
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-fg hover:bg-panel-2"
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

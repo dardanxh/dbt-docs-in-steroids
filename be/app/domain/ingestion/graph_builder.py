@@ -7,6 +7,7 @@ Metrics are computed with networkx on the assembled DiGraph.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import networkx as nx
@@ -144,6 +145,7 @@ def build_graph(bundle: ArtifactBundle) -> BuiltGraph:
                 edges.append((parent, uid))
 
     _compute_metrics(nodes, edges)
+    _compute_code_metrics(nodes, manifest)
 
     # --- sqlglot schema + relation index ---
     schema_tree: dict[str, dict[str, dict[str, dict[str, str]]]] = {}
@@ -198,3 +200,43 @@ def _compute_metrics(nodes: dict[str, NodeSpec], edges: list[tuple[str, str]]) -
     max_down = max(downstream_counts.values(), default=0)
     for uid in nodes:
         nodes[uid].metrics.hotspot_score = (downstream_counts[uid] / max_down) if max_down else 0.0
+
+
+# Weighted SQL constructs for the complexity heuristic. Works on raw_code (with
+# Jinja) since it's keyword-based — robust for `dbt parse` manifests where most
+# models have no compiled SQL to parse via sqlglot.
+_COMPLEXITY_PATTERNS: list[tuple[re.Pattern[str], float]] = [
+    (re.compile(r"\bjoin\b", re.I), 2.0),
+    (re.compile(r"\bover\s*\(", re.I), 3.0),  # window functions
+    (re.compile(r"\bcase\s+when\b", re.I), 1.0),
+    (re.compile(r"\bunion\b", re.I), 2.0),
+    (re.compile(r"\bgroup\s+by\b", re.I), 1.0),
+    (re.compile(r"\bhaving\b", re.I), 1.0),
+    (re.compile(r"\bdistinct\b", re.I), 1.0),
+    (re.compile(r"\(\s*select\b", re.I), 2.0),  # subqueries
+    (re.compile(r"\bwith\b|\)\s*,\s*\w+\s+as\s*\(", re.I), 2.0),  # CTE definitions
+]
+
+
+def _keyword_complexity(sql: str) -> float:
+    return round(sum(weight * len(pat.findall(sql)) for pat, weight in _COMPLEXITY_PATTERNS), 2)
+
+
+def _compute_code_metrics(nodes: dict[str, NodeSpec], manifest: dict[str, Any]) -> None:
+    """LOC, complexity, cohesion, column_count, test_count (heuristics)."""
+    for node in nodes.values():
+        node.metrics.column_count = len(node.columns)
+        if node.resource_type == ResourceType.MODEL and node.raw_code:
+            node.metrics.loc = sum(1 for ln in node.raw_code.splitlines() if ln.strip())
+            node.metrics.complexity = _keyword_complexity(node.raw_code)
+            distinct_upstreams = len({d for d in node.depends_on if d in nodes})
+            node.metrics.cohesion = round(1.0 / max(1, distinct_upstreams), 3)
+
+    # Tests reference the models/sources they cover via depends_on.nodes.
+    for raw in manifest.get("nodes", {}).values():
+        if raw.get("resource_type") not in ("test", "unit_test"):
+            continue
+        for uid in (raw.get("depends_on") or {}).get("nodes") or []:
+            target = nodes.get(uid)
+            if target is not None:
+                target.metrics.test_count += 1

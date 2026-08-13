@@ -15,6 +15,8 @@ from app.domain.lineage.schemas import (
     ColumnLite,
     ColumnOut,
     ColumnRefOut,
+    ColumnUsageItem,
+    ColumnUsageOut,
     EdgeOut,
     GraphNodeOut,
     GraphResponse,
@@ -46,6 +48,11 @@ _METRIC_FIELDS = {
     "degree_centrality",
     "betweenness",
     "hotspot_score",
+    "loc",
+    "complexity",
+    "cohesion",
+    "test_count",
+    "column_count",
 }
 
 
@@ -63,6 +70,11 @@ class LineageService:
             degree_centrality=node.degree_centrality,
             betweenness=node.betweenness,
             hotspot_score=node.hotspot_score,
+            loc=node.loc,
+            complexity=node.complexity,
+            cohesion=node.cohesion,
+            test_count=node.test_count,
+            column_count=node.column_count,
         )
 
     def graph(self, project_id: str) -> GraphResponse:
@@ -162,7 +174,44 @@ class LineageService:
             parents=parents,
             children=children,
             column_lineage_status=node.column_lineage_status,
+            sql=node.raw_code,
         )
+
+    def column_usage(self, project_id: str, unique_id: str) -> ColumnUsageOut:
+        """For each direct neighbour, how many of the shared source's columns are
+        consumed across the edge (used/total). See ColumnUsageOut."""
+        node = self.repo.node(project_id, unique_id)
+        if not node:
+            raise NotFoundError(f"Node {unique_id} not found")
+
+        totals = {n.unique_id: n.column_count for n in self.repo.nodes(project_id)}
+        col_edges = self.repo.column_edges(project_id)
+
+        # distinct src columns per (src_node, dst_node)
+        used: dict[tuple[str, str], set[str]] = defaultdict(set)
+        for e in col_edges:
+            used[(e.src_node, e.dst_node)].add(e.src_col)
+
+        edges = self.repo.edges(project_id)
+        upstream = [
+            ColumnUsageItem(
+                node_id=e.src_id,
+                used=len(used.get((e.src_id, unique_id), set())),
+                total=totals.get(e.src_id, 0),
+            )
+            for e in edges
+            if e.dst_id == unique_id
+        ]
+        downstream = [
+            ColumnUsageItem(
+                node_id=e.dst_id,
+                used=len(used.get((unique_id, e.dst_id), set())),
+                total=totals.get(unique_id, 0),
+            )
+            for e in edges
+            if e.src_id == unique_id
+        ]
+        return ColumnUsageOut(upstream=upstream, downstream=downstream)
 
     def node_columns(self, project_id: str, unique_id: str) -> list[ColumnLite]:
         if not self.repo.node(project_id, unique_id):

@@ -40,6 +40,8 @@ export interface LayoutOptions {
   metric: MetricKey;
   highlightNodes?: Set<string>; // node ids to highlight; others dimmed
   activeEdges?: Set<string>; // "src->dst" node-level edges to mark active
+  focusIds?: Set<string> | null; // when set, ONLY these nodes (+ their edges) are shown
+  layerOrder?: string[]; // custom left-to-right column order (defaults to API order)
 }
 
 export function computeLayout(graph: GraphResponse, opts: LayoutOptions): LayoutResult {
@@ -55,12 +57,25 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
   const highlightNodes = opts.highlightNodes ?? new Set<string>();
   const hasHighlight = highlightNodes.size > 0;
+  const focusIds = opts.focusIds ?? null;
+  const included = (id: string) => !focusIds || focusIds.has(id);
 
   const rfNodes: RFNode[] = [];
 
-  graph.layers.forEach((layer, colIndex) => {
+  // In focus mode, only layers that contain a focused node are shown (and never
+  // collapsed), so the isolated subgraph reads cleanly.
+  const visibleLayers = graph.layers.filter((layer) => layer.node_ids.some(included));
+
+  // Apply the user's custom column order (drag-to-reorder) when provided.
+  const rank = opts.layerOrder ? new Map(opts.layerOrder.map((n, i) => [n, i])) : null;
+  const orderedLayers = rank
+    ? [...visibleLayers].sort((a, b) => (rank.get(a.name) ?? 999) - (rank.get(b.name) ?? 999))
+    : visibleLayers;
+
+  orderedLayers.forEach((layer, colIndex) => {
     const x = colIndex * COLUMN_WIDTH;
-    const isCollapsed = collapsed.has(layer.name);
+    const layerNodeIds = layer.node_ids.filter(included);
+    const isCollapsed = !focusIds && collapsed.has(layer.name);
 
     // Column header (also the collapse toggle target).
     rfNodes.push({
@@ -69,7 +84,7 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
       position: { x, y: HEADER_Y },
       data: {
         layer: layer.name,
-        count: layer.node_ids.length,
+        count: layerNodeIds.length,
         collapsed: isCollapsed,
       } satisfies HeaderNodeData,
       draggable: false,
@@ -81,14 +96,14 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
         id: `layer:${layer.name}`,
         type: "collapsed",
         position: { x, y: FIRST_ROW_Y },
-        data: { layer: layer.name, count: layer.node_ids.length, collapsed: true } satisfies HeaderNodeData,
+        data: { layer: layer.name, count: layerNodeIds.length, collapsed: true } satisfies HeaderNodeData,
         draggable: false,
       });
       return;
     }
 
     // Sort nodes within the layer by the chosen metric (hotspots on top).
-    const nodes = layer.node_ids
+    const nodes = layerNodeIds
       .map((id) => nodeById.get(id))
       .filter((n): n is NonNullable<typeof n> => !!n)
       .sort((a, b) => (b.metrics[metric] ?? 0) - (a.metrics[metric] ?? 0));
@@ -121,6 +136,7 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
     return layer && collapsed.has(layer) ? `layer:${layer}` : id;
   };
   for (const e of graph.edges) {
+    if (!included(e.src) || !included(e.dst)) continue;
     const s = endpoint(e.src);
     const t = endpoint(e.dst);
     if (s === t) continue;
