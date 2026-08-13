@@ -2,39 +2,50 @@ import { useState } from "react";
 import { AnalyticsDashboard } from "@/features/analytics/AnalyticsDashboard";
 import { Sidebar, type View } from "@/features/app-shell/Sidebar";
 import { ThemeToggle } from "@/features/app-shell/ThemeToggle";
+import { CommandPalette } from "@/features/command/CommandPalette";
 import { LineageView } from "@/features/lineage/LineageView";
 import { ProjectBar } from "@/features/projects/ProjectBar";
 import { ProjectsView } from "@/features/projects/ProjectsView";
+import { QualityView } from "@/features/quality/QualityView";
 import { SettingsView } from "@/features/settings/SettingsView";
 
-// Persist active project + view in the URL so a view is shareable/reloadable.
+// Persist active project + view + selected node in the URL so a view is
+// shareable/reloadable and node selection works across views.
 function useUrlState() {
   const params = new URLSearchParams(window.location.search);
   const [projectId, setProjectId] = useState<string | null>(params.get("project"));
   const [view, setView] = useState<View>((params.get("view") as View) || "lineage");
+  const [nodeId, setNodeId] = useState<string | null>(params.get("node"));
 
-  const sync = (p: string | null, v: View) => {
+  const sync = (p: string | null, v: View, n: string | null) => {
     const q = new URLSearchParams();
     if (p) q.set("project", p);
     q.set("view", v);
+    if (n) q.set("node", n);
     window.history.replaceState(null, "", `?${q.toString()}`);
   };
   return {
     projectId,
     view,
+    nodeId,
     setProjectId: (p: string) => {
       setProjectId(p);
-      sync(p, view);
+      sync(p, view, nodeId);
     },
     setView: (v: View) => {
       setView(v);
-      sync(projectId, v);
+      sync(projectId, v, nodeId);
+    },
+    openNode: (n: string) => {
+      setNodeId(n);
+      setView("lineage");
+      sync(projectId, "lineage", n);
     },
   };
 }
 
 export function App() {
-  const { projectId, view, setProjectId, setView } = useUrlState();
+  const { projectId, view, nodeId, setProjectId, setView, openNode } = useUrlState();
 
   const openProject = (id: string) => {
     setProjectId(id);
@@ -58,9 +69,11 @@ export function App() {
           {!projectId && view !== "projects" && view !== "settings" ? (
             <Empty onGoProjects={() => setView("projects")} />
           ) : view === "lineage" && projectId ? (
-            <LineageView projectId={projectId} />
+            <LineageView projectId={projectId} focusNodeId={nodeId} />
           ) : view === "analytics" && projectId ? (
             <AnalyticsDashboard projectId={projectId} />
+          ) : view === "quality" && projectId ? (
+            <QualityView projectId={projectId} onOpenNode={openNode} />
           ) : view === "projects" ? (
             <ProjectsView activeId={projectId} onOpen={openProject} />
           ) : view === "settings" ? (
@@ -71,6 +84,8 @@ export function App() {
         </main>
         <Sidebar view={view} onView={setView} />
       </div>
+
+      <CommandPalette projectId={projectId} onOpenNode={openNode} />
     </div>
   );
 }

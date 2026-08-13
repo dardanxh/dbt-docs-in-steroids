@@ -1,7 +1,9 @@
-import { Crosshair, X } from "lucide-react";
+import { Check, Code2, Copy, Crosshair, X } from "lucide-react";
+import { Highlight, themes } from "prism-react-renderer";
 import { useState } from "react";
 import { apiGet } from "@/lib/api";
 import { layerColor, TRANSFORM_COLORS } from "@/lib/colors";
+import { useSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import type { ColumnLineage, NodeDetail } from "@/types";
 import { useNodeDetail } from "./api";
@@ -139,10 +141,68 @@ export function NodePanel({
             </ul>
           </div>
 
+          {node.sql && <CodeSection sql={node.sql} />}
           <TransformLegend />
         </div>
       )}
     </aside>
+  );
+}
+
+function CodeSection({ sql }: { sql: string }) {
+  const { resolvedTheme } = useSettings();
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const theme = resolvedTheme === "dark" ? themes.vsDark : themes.vsLight;
+
+  const copy = () => {
+    navigator.clipboard?.writeText(sql).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    });
+  };
+
+  return (
+    <div className="border-border border-t">
+      <div className="flex items-center justify-between px-4 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-1.5 font-semibold text-fg text-xs"
+        >
+          <Code2 size={13} /> SQL {open ? "▾" : "▸"}
+        </button>
+        {open && (
+          <button
+            type="button"
+            onClick={copy}
+            className="flex items-center gap-1 text-[10px] text-muted hover:text-fg"
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? "copied" : "copy"}
+          </button>
+        )}
+      </div>
+      {open && (
+        <Highlight code={sql.trim()} language="sql" theme={theme}>
+          {({ style, tokens, getLineProps, getTokenProps }) => (
+            <pre
+              className="max-h-96 overflow-auto px-4 pb-3 text-[11px] leading-relaxed"
+              style={{ ...style, background: "transparent" }}
+            >
+              {tokens.map((line, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: token lines are positional
+                <div key={i} {...getLineProps({ line })}>
+                  {line.map((token, key) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: tokens are positional
+                    <span key={key} {...getTokenProps({ token })} />
+                  ))}
+                </div>
+              ))}
+            </pre>
+          )}
+        </Highlight>
+      )}
+    </div>
   );
 }
 

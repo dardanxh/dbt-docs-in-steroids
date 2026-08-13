@@ -1,5 +1,12 @@
-import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode } from "@xyflow/react";
-import { Crosshair, PanelRight, Scan } from "lucide-react";
+import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  type Node as RFNode,
+} from "@xyflow/react";
+import { Crosshair, PanelRight, Scan, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hotspotColor, layerColor } from "@/lib/colors";
 import { useSettings, useThemeTokens } from "@/lib/settings";
@@ -36,7 +43,7 @@ interface Trace {
   rootColumn: string;
 }
 
-export function LineageView({ projectId }: { projectId: string }) {
+export function LineageView({ projectId, focusNodeId }: { projectId: string; focusNodeId?: string | null }) {
   const { data: graph, isPending, error } = useGraph(projectId);
   const tokens = useThemeTokens();
   const { settings } = useSettings();
@@ -47,6 +54,8 @@ export function LineageView({ projectId }: { projectId: string }) {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; nodeId: string; name: string } | null>(null);
   const [layerOrder, setLayerOrder] = useState<string[] | null>(null);
+  const [search, setSearch] = useState("");
+  const [testFilter, setTestFilter] = useState<"all" | "untested" | "tested">("all");
 
   // On first load, collapse oversized layers (e.g. 200+ sources) so the swimlane
   // graph fits the viewport instead of stretching thousands of px tall.
@@ -58,6 +67,22 @@ export function LineageView({ projectId }: { projectId: string }) {
       setLayerOrder(graph.layers.map((l) => l.name));
     }
   }, [graph, projectId]);
+
+  // Externally-driven selection (from the Cmd-K palette or the Quality view):
+  // select the node and reveal its (possibly collapsed) layer.
+  useEffect(() => {
+    if (!focusNodeId || !graph) return;
+    const node = graph.nodes.find((n) => n.id === focusNodeId);
+    if (!node) return;
+    setSelectedNodeId(focusNodeId);
+    setTrace(null);
+    setCollapsed((prev) => {
+      if (!prev.has(node.layer)) return prev;
+      const next = new Set(prev);
+      next.delete(node.layer);
+      return next;
+    });
+  }, [focusNodeId, graph]);
 
   // Node adjacency (direct parents/children) from the edge list — reused by the
   // selection highlight and by focus mode.
@@ -95,7 +120,23 @@ export function LineageView({ projectId }: { projectId: string }) {
     return { nodes, edges };
   }, [selectedNodeId, adjacency]);
 
-  // A column trace (if active) takes priority over the node-neighbor highlight.
+  // Search / filter: matched node set (name substring + test filter). Null when
+  // no filter is active.
+  const filterActive = search.trim() !== "" || testFilter !== "all";
+  const filterMatch = useMemo(() => {
+    if (!graph || !filterActive) return null;
+    const q = search.trim().toLowerCase();
+    const matched = new Set<string>();
+    for (const n of graph.nodes) {
+      if (q && !n.name.toLowerCase().includes(q)) continue;
+      if (testFilter === "untested" && !(n.resource_type === "model" && n.metrics.test_count === 0)) continue;
+      if (testFilter === "tested" && !(n.metrics.test_count > 0)) continue;
+      matched.add(n.id);
+    }
+    return matched;
+  }, [graph, filterActive, search, testFilter]);
+
+  // Highlight priority: column trace > node selection > search filter.
   const highlight = useMemo(() => {
     if (trace) {
       return {
@@ -104,8 +145,9 @@ export function LineageView({ projectId }: { projectId: string }) {
       };
     }
     if (selectionHighlight) return selectionHighlight;
+    if (filterMatch) return { nodes: filterMatch, edges: new Set<string>() };
     return { nodes: undefined, edges: undefined };
-  }, [trace, selectionHighlight]);
+  }, [trace, selectionHighlight, filterMatch]);
 
   // A trace often reaches into a collapsed layer (e.g. sources). Expand any
   // layer that contains a highlighted node so the path is actually visible.
@@ -260,6 +302,18 @@ export function LineageView({ projectId }: { projectId: string }) {
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color={tokens.border} />
         <Controls showInteractive={false} />
+        {settings.minimap && (
+          <MiniMap
+            pannable
+            zoomable
+            style={{ background: tokens.panel2 }}
+            maskColor={`color-mix(in srgb, ${tokens.bg} 65%, transparent)`}
+            nodeColor={(n) => {
+              const layer = (n.data as { layer?: string })?.layer;
+              return layer ? layerColor(layer) : tokens.border;
+            }}
+          />
+        )}
       </ReactFlow>
 
       <Toolbar
@@ -279,6 +333,13 @@ export function LineageView({ projectId }: { projectId: string }) {
       />
 
       <div className="-translate-x-1/2 absolute top-4 left-1/2 z-10 flex flex-col items-center gap-2">
+        <SearchBar
+          search={search}
+          onSearch={setSearch}
+          testFilter={testFilter}
+          onTestFilter={setTestFilter}
+          matchCount={filterMatch?.size ?? null}
+        />
         {focusId && (
           <div className="rounded-md border border-sky-500/40 bg-panel/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur">
             Focused on <span className="font-semibold text-sky-400">{focusName}</span> ·{" "}
@@ -371,6 +432,60 @@ export function LineageView({ projectId }: { projectId: string }) {
           }}
           isFocused={focusId === selectedNodeId}
         />
+      )}
+    </div>
+  );
+}
+
+function SearchBar({
+  search,
+  onSearch,
+  testFilter,
+  onTestFilter,
+  matchCount,
+}: {
+  search: string;
+  onSearch: (v: string) => void;
+  testFilter: "all" | "untested" | "tested";
+  onTestFilter: (v: "all" | "untested" | "tested") => void;
+  matchCount: number | null;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border bg-panel/95 px-2 py-1 text-xs shadow-lg backdrop-blur">
+      <Search size={13} className="text-muted" />
+      <input
+        value={search}
+        onChange={(e) => onSearch(e.target.value)}
+        placeholder="Search models…"
+        className="w-44 bg-transparent text-fg outline-none placeholder:text-muted"
+      />
+      <div className="flex overflow-hidden rounded border border-border">
+        {(["all", "tested", "untested"] as const).map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => onTestFilter(f)}
+            className={cn(
+              "px-1.5 py-0.5 text-[10px]",
+              testFilter === f ? "bg-panel-2 text-fg" : "text-muted hover:text-fg",
+            )}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+      {matchCount !== null && <span className="text-muted">{matchCount} match</span>}
+      {(search || testFilter !== "all") && (
+        <button
+          type="button"
+          onClick={() => {
+            onSearch("");
+            onTestFilter("all");
+          }}
+          className="text-muted hover:text-fg"
+        >
+          <X size={12} />
+        </button>
       )}
     </div>
   );

@@ -103,6 +103,7 @@ export function useThemeTokens() {
     const cs = getComputedStyle(document.documentElement);
     const get = (n: string) => cs.getPropertyValue(n).trim() || undefined;
     return {
+      bg: get("--color-bg") ?? "#0b0f17",
       border: get("--color-border") ?? "#223049",
       panel: get("--color-panel") ?? "#111826",
       panel2: get("--color-panel-2") ?? "#161f30",
