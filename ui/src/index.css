@@ -1,0 +1,53 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+/* Tailwind v4 CSS-first theme. Neutral slate palette + layer accent colors. */
+@theme {
+  --color-bg: #0b0f17;
+  --color-panel: #111826;
+  --color-panel-2: #161f30;
+  --color-border: #223049;
+  --color-muted: #8595ad;
+  --color-fg: #e6ecf5;
+  --color-accent: #4f8cff;
+
+  /* Per-layer accents (used for swimlane headers + node borders). */
+  --color-layer-source: #7c8b9e;
+  --color-layer-stage: #38bdf8;
+  --color-layer-dwh: #818cf8;
+  --color-layer-datamart: #f472b6;
+  --color-layer-reporting: #34d399;
+  --color-layer-lkp: #fbbf24;
+  --color-layer-archive: #94a3b8;
+  --color-layer-other: #64748b;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* React Flow dark tweaks */
+.react-flow__attribution {
+  display: none;
+}
+.react-flow__edge-path {
+  stroke: var(--color-border);
+}
+.react-flow__edge.dimmed .react-flow__edge-path {
+  stroke: #1a2436;
+}
+.react-flow__edge.active .react-flow__edge-path {
+  stroke: var(--color-accent);
+  stroke-width: 2;
+}

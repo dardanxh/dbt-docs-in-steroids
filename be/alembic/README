@@ -1,0 +1,6 @@
+Generic single-database configuration.
+
+Create a migration after changing models:
+  uv run alembic revision --autogenerate -m "describe change"
+Apply:
+  uv run alembic upgrade head

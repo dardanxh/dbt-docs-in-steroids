@@ -1,0 +1,50 @@
+[project]
+name = "dbt-docs-in-steroids-be"
+version = "0.1.0"
+description = "dbt-docs-in-steroids — backend API (dbt lineage & analytics)"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.18.4",
+    "fastapi>=0.135.3",
+    "fastapi-pagination>=0.15.12",
+    "networkx>=3.4",
+    "psycopg2-binary>=2.9.11",
+    "pydantic==2.13.0",
+    "pydantic-settings>=2.13.1",
+    "python-multipart>=0.0.20",
+    "sqlalchemy>=2.0.49",
+    "sqlglot>=27.0.0",
+    "uvicorn[standard]>=0.44.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=1.20.0",
+    "pytest>=9.0.2",
+    "ruff>=0.15.9",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+# Alembic writes migration files; don't lint generated code.
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+ignore_missing_imports = true
+
+# Tests use pytest fixtures and don't need full type annotations.
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
