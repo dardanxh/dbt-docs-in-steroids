@@ -13,6 +13,9 @@ node_modules/
 dist/
 *.local
 
+# Local dev launcher logs (setup.sh)
+.dev-logs/
+
 # OS / editors
 .DS_Store
 .idea/

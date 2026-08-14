@@ -32,6 +32,20 @@ React 19 + TypeScript (React Flow + recharts + TanStack Query).
 Prereqs: Docker, `uv`, `pnpm`, and a dbt project whose `target/` has a fresh
 `manifest.json` (+ `catalog.json` for column types).
 
+**One command (recommended):**
+
+```bash
+./setup.sh
+```
+
+Checks prereqs, installs deps, starts Postgres in Docker (+ migrations), then
+launches the backend (`:8000`) and frontend (`:5173`) on the host and tails their
+logs. On first run it creates `be/.env` — set `DEFAULT_DBT_PROJECT_PATH` in it and
+re-run. Press `Ctrl-C` to stop the backend + frontend (Postgres keeps running;
+stop it with `docker stop dbtsteroids-postgres`).
+
+**Or manually:**
+
 ```bash
 # 1) Backend
 cd be
