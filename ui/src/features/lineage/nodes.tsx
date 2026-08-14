@@ -67,15 +67,15 @@ export function ModelNode({ data, selected }: NodeProps) {
 }
 
 export function HeaderNode({ data }: NodeProps) {
-  const d = data as { layer: string; count: number; collapsed: boolean };
-  const accent = layerColor(d.layer);
+  const d = data as { layer: string; count: number; collapsed: boolean; label?: string; accent?: string };
+  const accent = d.accent ?? layerColor(d.layer);
   return (
     <div
       className="flex items-center gap-2 rounded-md px-2 py-1 font-semibold text-xs uppercase tracking-wide"
       style={{ color: accent }}
     >
       <span className="h-2.5 w-2.5 rounded-sm" style={{ background: accent }} />
-      {d.layer}
+      {d.label ?? d.layer}
       <span className="rounded bg-panel-2 px-1.5 py-0.5 text-[10px] text-muted normal-case">{d.count}</span>
       <span className="text-[10px] text-muted normal-case">{d.collapsed ? "▶ expand" : "▼ collapse"}</span>
     </div>
@@ -83,8 +83,8 @@ export function HeaderNode({ data }: NodeProps) {
 }
 
 export function CollapsedNode({ data }: NodeProps) {
-  const d = data as { layer: string; count: number };
-  const accent = layerColor(d.layer);
+  const d = data as { layer: string; count: number; label?: string; accent?: string };
+  const accent = d.accent ?? layerColor(d.layer);
   return (
     <div
       style={{ width: NODE_WIDTH, borderColor: accent }}
@@ -92,7 +92,7 @@ export function CollapsedNode({ data }: NodeProps) {
     >
       <Handle type="target" position={Position.Left} style={{ background: accent }} />
       <span className="font-medium" style={{ color: accent }}>
-        {d.layer}
+        {d.label ?? d.layer}
       </span>
       <span className="text-muted">· {d.count} nodes collapsed</span>
       <Handle type="source" position={Position.Right} style={{ background: accent }} />

@@ -1,5 +1,5 @@
 import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode } from "@xyflow/react";
-import { Crosshair, PanelRight, Scan, Search, X } from "lucide-react";
+import { Crosshair, Layers, PanelRight, Scan, Search, Wand2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSidebarSlot } from "@/features/app-shell/sidebar-slot";
@@ -78,6 +78,10 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     setActiveKey((cur) => (cur === key ? "all" : cur));
   }, []);
   const [layerOrder, setLayerOrder] = useState<string[] | null>(null);
+  // Layout refinements: `tidy` reorders nodes within columns to reduce edge
+  // crossings; `flatten` ignores semantic layers and columns by dependency depth.
+  const [tidy, setTidy] = useState(false);
+  const [flatten, setFlatten] = useState(false);
   const [search, setSearch] = useState("");
   const [testFilter, setTestFilter] = useState<"all" | "untested" | "tested">("all");
   // Focus-tab depth control: how many hops of parents/children to include, and
@@ -266,8 +270,10 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       focusIds: focusSet,
       layerOrder: layerOrder ?? undefined,
       badges,
+      tidy,
+      flatten,
     });
-  }, [graph, collapsed, metric, highlight, focusId, focusSet, layerOrder, badges]);
+  }, [graph, collapsed, metric, highlight, focusId, focusSet, layerOrder, badges, tidy, flatten]);
 
   const reorderLayers = useCallback(
     (from: number, to: number) => {
@@ -325,7 +331,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       <TabBar tabs={tabs} activeKey={activeKey} onSelect={setActiveKey} onClose={closeTab} />
       <div className="relative min-h-0 flex-1">
         <ReactFlow
-          key={`${activeKey}:${focusDepth ?? "all"}:${focusDirection}`}
+          key={`${activeKey}:${focusDepth ?? "all"}:${focusDirection}:${flatten ? "flat" : "layers"}`}
           nodes={layout.nodes}
           edges={layout.edges}
           nodeTypes={NODE_TYPES}
@@ -359,8 +365,11 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
           />
         )}
 
-        {(() => {
-          const toolbar = (
+        {/* Dock the controls into the right sidebar; when the sidebar is
+            collapsed (no slot) we simply hide them rather than float a panel
+            over the canvas. */}
+        {sidebarSlot &&
+          createPortal(
             <Toolbar
               metric={metric}
               onMetric={setMetric}
@@ -368,25 +377,24 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
               collapsedCount={collapsed.size}
               onExpandAll={() => setCollapsed(new Set())}
               onCollapseAll={() => setCollapsed(new Set(graph.layers.map((l) => l.name)))}
-            />
-          );
-          // Dock the controls into the right sidebar; fall back to a floating panel
-          // when the sidebar is collapsed (no slot).
-          return sidebarSlot ? (
-            createPortal(toolbar, sidebarSlot)
-          ) : (
-            <div className="absolute top-4 left-4 z-10 w-56 rounded-lg border border-border bg-panel/95 shadow-lg backdrop-blur">
-              {toolbar}
-            </div>
-          );
-        })()}
+              tidy={tidy}
+              onTidy={() => setTidy((v) => !v)}
+              flatten={flatten}
+              onFlatten={() => setFlatten((v) => !v)}
+            />,
+            sidebarSlot,
+          )}
 
-        <LayerOrderBar
-          order={layerOrder ?? graph.layers.map((l) => l.name)}
-          onReorder={reorderLayers}
-          onReset={() => setLayerOrder(graph.layers.map((l) => l.name))}
-          canReset={!!layerOrder && layerOrder.join() !== graph.layers.map((l) => l.name).join()}
-        />
+        {/* Manual column order only applies to semantic layers, not flattened
+            depth stages. */}
+        {!flatten && (
+          <LayerOrderBar
+            order={layerOrder ?? graph.layers.map((l) => l.name)}
+            onReorder={reorderLayers}
+            onReset={() => setLayerOrder(graph.layers.map((l) => l.name))}
+            canReset={!!layerOrder && layerOrder.join() !== graph.layers.map((l) => l.name).join()}
+          />
+        )}
 
         <div className="-translate-x-1/2 absolute top-4 left-1/2 z-10 flex flex-col items-center gap-2">
           <SearchBar
@@ -643,6 +651,10 @@ function Toolbar({
   collapsedCount,
   onExpandAll,
   onCollapseAll,
+  tidy,
+  onTidy,
+  flatten,
+  onFlatten,
 }: {
   metric: MetricKey;
   onMetric: (m: MetricKey) => void;
@@ -650,6 +662,10 @@ function Toolbar({
   collapsedCount: number;
   onExpandAll: () => void;
   onCollapseAll: () => void;
+  tidy: boolean;
+  onTidy: () => void;
+  flatten: boolean;
+  onFlatten: () => void;
 }) {
   return (
     <div className="flex flex-col gap-2 border-border border-t px-3 py-3 text-xs">
@@ -669,22 +685,43 @@ function Toolbar({
         </select>
       </div>
       <Legend />
+      <div className="flex flex-col gap-1">
+        <span className="text-muted">Layout</span>
+        <div className="flex items-center gap-2">
+          <ToggleButton
+            active={tidy}
+            onClick={onTidy}
+            title="Reorder nodes within each column to reduce edge crossings"
+          >
+            <Wand2 size={12} /> Untangle
+          </ToggleButton>
+          <ToggleButton
+            active={flatten}
+            onClick={onFlatten}
+            title="Ignore SOURCE/DWH/DATAMART layers; lay out columns by dependency depth"
+          >
+            <Layers size={12} /> Skip layers
+          </ToggleButton>
+        </div>
+      </div>
       <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={onCollapseAll}
-          className="rounded border border-border px-2 py-1 text-muted hover:text-fg"
+          disabled={flatten}
+          className="rounded border border-border px-2 py-1 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
         >
           Collapse all
         </button>
         <button
           type="button"
           onClick={onExpandAll}
-          className="rounded border border-border px-2 py-1 text-muted hover:text-fg"
+          disabled={flatten}
+          className="rounded border border-border px-2 py-1 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
         >
           Expand all
         </button>
-        {collapsedCount > 0 && <span className="text-muted">{collapsedCount} collapsed</span>}
+        {!flatten && collapsedCount > 0 && <span className="text-muted">{collapsedCount} collapsed</span>}
       </div>
       <div className="text-[11px] text-muted">
         Column lineage: <span className="text-emerald-400">{coverage.column_lineage_ok ?? 0} ok</span> ·{" "}
@@ -692,6 +729,33 @@ function Toolbar({
         {coverage.column_lineage_failed ?? 0} none / {coverage.models ?? 0} models
       </div>
     </div>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={active}
+      className={cn(
+        "flex items-center gap-1 rounded border px-2 py-1",
+        active ? "border-accent bg-accent/15 text-fg" : "border-border text-muted hover:text-fg",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
