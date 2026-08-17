@@ -3,7 +3,7 @@ import { Crosshair, Layers, PanelRight, Scan, Search, Wand2, X } from "lucide-re
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSidebarSlot } from "@/features/app-shell/sidebar-slot";
-import { hotspotColor, layerColor } from "@/lib/colors";
+import { hotspotColor, layerColor, STATUS_LEGEND } from "@/lib/colors";
 import { useSettings, useThemeTokens } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import type { ColumnLineage, MetricKey, NodeMetrics } from "@/types";
@@ -20,15 +20,31 @@ const METRICS: { key: MetricKey; label: string }[] = [
   { key: "fan_out", label: "Direct dependents" },
   { key: "fan_in", label: "Direct inputs" },
   { key: "betweenness", label: "Betweenness centrality" },
+  { key: "degree_centrality", label: "Degree centrality" },
   { key: "hotspot_score", label: "Hotspot score" },
   { key: "complexity", label: "SQL complexity" },
   { key: "loc", label: "Lines of code" },
   { key: "test_count", label: "Test count" },
   { key: "cohesion", label: "Cohesion" },
+  { key: "column_count", label: "Column count" },
 ];
 
+// Categorical colorings (discrete palette + legend) live alongside the numeric
+// heat metrics in the same "Color by" dropdown.
+const STATUS_COLOR_KEY = "column_lineage_status";
+type ColorKey = MetricKey | typeof STATUS_COLOR_KEY;
+
+// Fractional metrics get fixed decimals; counts stay whole numbers.
+const DECIMALS: Partial<Record<keyof NodeMetrics, number>> = {
+  cohesion: 2,
+  hotspot_score: 3,
+  betweenness: 3,
+  degree_centrality: 3,
+};
+
 function formatBadge(key: keyof NodeMetrics, v: number): string {
-  if (key === "cohesion") return v.toFixed(2);
+  const dp = DECIMALS[key];
+  if (dp != null) return v.toFixed(dp);
   if (key === "complexity") return String(Math.round(v));
   return String(v);
 }
@@ -54,7 +70,11 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const { settings } = useSettings();
   const { target: sidebarSlot } = useSidebarSlot();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [metric, setMetric] = useState<MetricKey>("downstream_count");
+  const [colorBy, setColorBy] = useState<ColorKey>("downstream_count");
+  const colorByStatus = colorBy === STATUS_COLOR_KEY;
+  // Numeric metric backing ordering + badges; falls back to a sensible default
+  // when a categorical coloring (e.g. status) is active.
+  const metric: MetricKey = colorByStatus ? "downstream_count" : colorBy;
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [trace, setTrace] = useState<Trace | null>(null);
   // Focus tabs: "All" (never closeable) + one closeable tab per focused module,
@@ -236,9 +256,10 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   // Column-usage fractions for the selected node's neighbours.
   const { data: usage } = useColumnUsage(projectId, selectedNodeId);
 
-  // Right-aligned node badges: the configurable metric (default LOC) when nothing
-  // is selected; the selected node shows its column count and each neighbour shows
-  // used/total columns consumed across the shared edge.
+  // Right-aligned node badges: the active "Color by" metric when nothing is
+  // selected (so the number matches the coloring); the selected node shows its
+  // column count and each neighbour shows used/total columns across the edge.
+  // `badgeMetric: "none"` still acts as an off switch for the per-node number.
   const badges = useMemo(() => {
     const map = new Map<string, string>();
     if (!graph) return map;
@@ -250,15 +271,22 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
           map.set(u.node_id, u.total > 0 ? `${u.used}/${u.total}` : "–");
         }
       }
-    } else if (settings.badgeMetric !== "none") {
-      const key = settings.badgeMetric as keyof NodeMetrics;
+    } else if (!colorByStatus && settings.badgeMetric !== "none") {
       for (const n of graph.nodes) {
-        const v = n.metrics[key];
-        if (v != null && v !== 0) map.set(n.id, formatBadge(key, v));
+        const v = n.metrics[metric];
+        if (v != null && v !== 0) map.set(n.id, formatBadge(metric, v));
       }
     }
     return map;
-  }, [graph, selectedNodeId, usage, settings.badgeMetric, settings.showColumnFractions]);
+  }, [
+    graph,
+    selectedNodeId,
+    usage,
+    metric,
+    colorByStatus,
+    settings.badgeMetric,
+    settings.showColumnFractions,
+  ]);
 
   const layout = useMemo(() => {
     if (!graph) return { nodes: [], edges: [] };
@@ -272,8 +300,21 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       badges,
       tidy,
       flatten,
+      colorByStatus,
     });
-  }, [graph, collapsed, metric, highlight, focusId, focusSet, layerOrder, badges, tidy, flatten]);
+  }, [
+    graph,
+    collapsed,
+    metric,
+    highlight,
+    focusId,
+    focusSet,
+    layerOrder,
+    badges,
+    tidy,
+    flatten,
+    colorByStatus,
+  ]);
 
   const reorderLayers = useCallback(
     (from: number, to: number) => {
@@ -371,8 +412,8 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
         {sidebarSlot &&
           createPortal(
             <Toolbar
-              metric={metric}
-              onMetric={setMetric}
+              colorBy={colorBy}
+              onColorBy={setColorBy}
               coverage={graph.coverage}
               collapsedCount={collapsed.size}
               onExpandAll={() => setCollapsed(new Set())}
@@ -645,8 +686,8 @@ function SearchBar({
 }
 
 function Toolbar({
-  metric,
-  onMetric,
+  colorBy,
+  onColorBy,
   coverage,
   collapsedCount,
   onExpandAll,
@@ -656,8 +697,8 @@ function Toolbar({
   flatten,
   onFlatten,
 }: {
-  metric: MetricKey;
-  onMetric: (m: MetricKey) => void;
+  colorBy: ColorKey;
+  onColorBy: (m: ColorKey) => void;
   coverage: Record<string, number>;
   collapsedCount: number;
   onExpandAll: () => void;
@@ -673,18 +714,23 @@ function Toolbar({
       <div className="flex flex-col gap-1">
         <span className="text-muted">Color by</span>
         <select
-          value={metric}
-          onChange={(e) => onMetric(e.target.value as MetricKey)}
+          value={colorBy}
+          onChange={(e) => onColorBy(e.target.value as ColorKey)}
           className="w-full rounded border border-border bg-panel-2 px-2 py-1 text-fg outline-none"
         >
-          {METRICS.map((m) => (
-            <option key={m.key} value={m.key}>
-              {m.label}
-            </option>
-          ))}
+          <optgroup label="Metrics (heat)">
+            {METRICS.map((m) => (
+              <option key={m.key} value={m.key}>
+                {m.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Categories">
+            <option value={STATUS_COLOR_KEY}>Column lineage status</option>
+          </optgroup>
         </select>
       </div>
-      <Legend />
+      <Legend status={colorBy === STATUS_COLOR_KEY} />
       <div className="flex flex-col gap-1">
         <span className="text-muted">Layout</span>
         <div className="flex items-center gap-2">
@@ -759,7 +805,19 @@ function ToggleButton({
   );
 }
 
-function Legend() {
+function Legend({ status }: { status: boolean }) {
+  if (status) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {STATUS_LEGEND.map((s) => (
+          <span key={s.key} className="flex items-center gap-1 text-muted">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+    );
+  }
   const stops = [0, 0.25, 0.5, 0.75, 1];
   return (
     <div className="flex items-center gap-2">

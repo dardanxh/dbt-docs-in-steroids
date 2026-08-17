@@ -46,3 +46,23 @@ export const TRANSFORM_COLORS: Record<string, string> = {
   aggregate: "#f472b6",
   unknown: "#94a3b8",
 };
+
+// Column-lineage coverage status — shared by the node status dot, the
+// "Color by: Column lineage status" tint, and its legend.
+export const STATUS_COLORS: Record<string, string> = {
+  ok: "#34d399",
+  partial: "#fbbf24",
+  failed: "#6b7280",
+};
+
+// Legend rows (label + color) for status coloring, in severity order.
+export const STATUS_LEGEND: Array<{ key: string; label: string; color: string }> = [
+  { key: "ok", label: "OK", color: STATUS_COLORS.ok },
+  { key: "partial", label: "Partial", color: STATUS_COLORS.partial },
+  { key: "failed", label: "None", color: STATUS_COLORS.failed },
+  { key: "na", label: "N/A", color: "#475569" },
+];
+
+export function statusColor(status: string | null): string {
+  return (status && STATUS_COLORS[status]) ?? "#475569";
+}

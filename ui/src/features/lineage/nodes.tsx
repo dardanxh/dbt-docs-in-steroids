@@ -1,33 +1,26 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { hotspotColor, layerColor } from "@/lib/colors";
+import { layerColor, STATUS_COLORS } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { NODE_WIDTH } from "./layout";
-
-const STATUS_DOT: Record<string, string> = {
-  ok: "#34d399",
-  partial: "#fbbf24",
-  failed: "#6b7280",
-};
 
 export function ModelNode({ data, selected }: NodeProps) {
   const d = data as {
     label: string;
     layer: string;
     resourceType: string;
-    metricValue: number;
+    tint: string;
     columnLineageStatus: string | null;
     dimmed: boolean;
     highlighted: boolean;
     badge?: string;
   };
   const accent = layerColor(d.layer);
-  const heat = hotspotColor(d.metricValue);
   return (
     <div
       style={{
         width: NODE_WIDTH,
         borderLeftColor: accent,
-        background: `color-mix(in srgb, ${heat} 22%, var(--color-panel))`,
+        background: `color-mix(in srgb, ${d.tint} 22%, var(--color-panel))`,
       }}
       className={cn(
         "flex items-center gap-2 rounded-md border border-border border-l-4 px-2.5 py-1.5 text-xs shadow-sm transition-opacity",
@@ -58,7 +51,7 @@ export function ModelNode({ data, selected }: NodeProps) {
         <span
           className="h-2 w-2 shrink-0 rounded-full"
           title={`column lineage: ${d.columnLineageStatus}`}
-          style={{ background: STATUS_DOT[d.columnLineageStatus] ?? "#6b7280" }}
+          style={{ background: STATUS_COLORS[d.columnLineageStatus] ?? "#6b7280" }}
         />
       )}
       <Handle type="source" position={Position.Right} style={{ background: accent, width: 6, height: 6 }} />

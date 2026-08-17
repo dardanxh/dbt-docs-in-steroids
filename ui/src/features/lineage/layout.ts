@@ -1,4 +1,5 @@
 import type { Edge as RFEdge, Node as RFNode } from "@xyflow/react";
+import { hotspotColor, statusColor } from "@/lib/colors";
 import type { GraphResponse, MetricKey } from "@/types";
 
 // Deterministic layered ("swimlane") layout: one column per layer in the
@@ -21,7 +22,7 @@ export interface ModelNodeData {
   label: string;
   layer: string;
   resourceType: string;
-  metricValue: number; // normalized 0..1 for coloring
+  tint: string; // resolved node fill color (heat scale, or status color)
   columnLineageStatus: string | null;
   dimmed: boolean;
   highlighted: boolean;
@@ -53,6 +54,7 @@ export interface LayoutOptions {
   badges?: Map<string, string>; // nodeId -> right-aligned badge text
   tidy?: boolean; // reorder within columns to reduce edge crossings
   flatten?: boolean; // ignore semantic layers; columns = dependency depth
+  colorByStatus?: boolean; // tint by column-lineage status instead of the metric heat scale
 }
 
 interface Column {
@@ -164,7 +166,9 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
           label: n.name,
           layer: n.layer,
           resourceType: n.resource_type,
-          metricValue: norm(n.metrics[metric] ?? 0),
+          tint: opts.colorByStatus
+            ? statusColor(n.column_lineage_status)
+            : hotspotColor(norm(n.metrics[metric] ?? 0)),
           columnLineageStatus: n.column_lineage_status,
           dimmed: hasHighlight && !highlighted,
           highlighted,
