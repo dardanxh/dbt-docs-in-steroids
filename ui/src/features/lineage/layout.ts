@@ -26,6 +26,7 @@ export interface ModelNodeData {
   columnLineageStatus: string | null;
   dimmed: boolean;
   highlighted: boolean;
+  connected: boolean; // on the green relationship path (relationship mode)
   badge?: string; // right-aligned chip (LOC / used·total column fraction / etc.)
   [key: string]: unknown;
 }
@@ -55,6 +56,7 @@ export interface LayoutOptions {
   tidy?: boolean; // reorder within columns to reduce edge crossings
   flatten?: boolean; // ignore semantic layers; columns = dependency depth
   colorByStatus?: boolean; // tint by column-lineage status instead of the metric heat scale
+  connect?: boolean; // relationship mode: paint the highlighted path/edges green
 }
 
 interface Column {
@@ -172,6 +174,7 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
           columnLineageStatus: n.column_lineage_status,
           dimmed: hasHighlight && !highlighted,
           highlighted,
+          connected: !!opts.connect && highlighted,
           badge: opts.badges?.get(n.id),
         } satisfies ModelNodeData,
         draggable: false,
@@ -185,7 +188,7 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
       id: `${e.source}->${e.target}`,
       source: e.source,
       target: e.target,
-      className: e.active ? "active" : dimmed ? "dimmed" : undefined,
+      className: e.active ? (opts.connect ? "connected" : "active") : dimmed ? "dimmed" : undefined,
       zIndex: e.active ? 10 : 0,
     };
   });

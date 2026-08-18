@@ -12,6 +12,7 @@ export function ModelNode({ data, selected }: NodeProps) {
     columnLineageStatus: string | null;
     dimmed: boolean;
     highlighted: boolean;
+    connected: boolean;
     badge?: string;
   };
   const accent = layerColor(d.layer);
@@ -25,7 +26,7 @@ export function ModelNode({ data, selected }: NodeProps) {
       className={cn(
         "flex items-center gap-2 rounded-md border border-border border-l-4 px-2.5 py-1.5 text-xs shadow-sm transition-opacity",
         selected && "ring-2 ring-accent",
-        d.highlighted && "ring-2 ring-sky-400",
+        d.connected ? "ring-2 ring-emerald-400" : d.highlighted && "ring-2 ring-sky-400",
         d.dimmed ? "opacity-25" : "opacity-100",
       )}
     >

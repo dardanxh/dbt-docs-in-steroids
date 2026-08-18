@@ -65,3 +65,7 @@ body,
   stroke: var(--color-accent);
   stroke-width: 2;
 }
+.react-flow__edge.connected .react-flow__edge-path {
+  stroke: #34d399; /* emerald-400 — relationship-mode connecting path */
+  stroke-width: 2.5;
+}

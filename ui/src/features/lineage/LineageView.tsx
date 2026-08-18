@@ -1,13 +1,13 @@
 import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode } from "@xyflow/react";
-import { Crosshair, Layers, PanelRight, Scan, Search, Wand2, X } from "lucide-react";
+import { Crosshair, Layers, PanelRight, Route, Scan, Search, Wand2, Waypoints, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSidebarSlot } from "@/features/app-shell/sidebar-slot";
 import { hotspotColor, layerColor, STATUS_LEGEND } from "@/lib/colors";
 import { useSettings, useThemeTokens } from "@/lib/settings";
 import { cn } from "@/lib/utils";
-import type { ColumnLineage, MetricKey, NodeMetrics } from "@/types";
-import { useColumnUsage, useGraph } from "./api";
+import type { Column, ColumnLineage, MetricKey, NodeMetrics } from "@/types";
+import { useColumnLineage, useColumnUsage, useGraph, useNodeDetail } from "./api";
 import { computeLayout } from "./layout";
 import { NodePanel } from "./NodePanel";
 import { CollapsedNode, HeaderNode, ModelNode } from "./nodes";
@@ -77,6 +77,14 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const metric: MetricKey = colorByStatus ? "downstream_count" : colorBy;
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [trace, setTrace] = useState<Trace | null>(null);
+  // "Check relationship" mode: a distinct interaction from single-selection.
+  // While active, clicking two models picks endpoints A→B and the connecting
+  // subgraph (if any directed path exists) is painted green.
+  const [relMode, setRelMode] = useState(false);
+  const [relEndpoints, setRelEndpoints] = useState<{ a: string | null; b: string | null }>({
+    a: null,
+    b: null,
+  });
   // Focus tabs: "All" (never closeable) + one closeable tab per focused module,
   // each rendering only that module's lineage subgraph.
   const [tabs, setTabs] = useState<FocusTab[]>([ALL_TAB]);
@@ -108,6 +116,11 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   // in which direction. null depth = the whole lineage.
   const [focusDepth, setFocusDepth] = useState<number | null>(null);
   const [focusDirection, setFocusDirection] = useState<FocusDirection>("both");
+  // Column-flow (focus mode only): trace one of the focused model's columns
+  // both up (source columns it derives from) and down (columns it feeds), and
+  // dim everything off that column's path. A toggle + per-column picker.
+  const [columnFlow, setColumnFlow] = useState(false);
+  const [flowColumn, setFlowColumn] = useState<string | null>(null);
 
   // On first load, collapse oversized layers (e.g. 200+ sources) so the swimlane
   // graph fits the viewport instead of stretching thousands of px tall.
@@ -174,6 +187,42 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     return { nodes, edges };
   }, [selectedNodeId, adjacency]);
 
+  // Relationship mode: the connecting subgraph between endpoints A and B, i.e.
+  // every model on some directed path A→…→B (or B→…→A). Computed as
+  // descendants(src) ∩ ancestors(dst) so parallel intermediate routes all light
+  // up, not just one shortest path. `connected: false` ⇒ A and B are unrelated.
+  const relationship = useMemo(() => {
+    const { a, b } = relEndpoints;
+    if (!graph || !a || !b) return null;
+    const reach = (start: string, adj: Map<string, string[]>) => {
+      const seen = new Set<string>();
+      const stack = [start];
+      while (stack.length) {
+        const cur = stack.pop() as string;
+        for (const nb of adj.get(cur) ?? []) {
+          if (!seen.has(nb)) {
+            seen.add(nb);
+            stack.push(nb);
+          }
+        }
+      }
+      return seen;
+    };
+    const orient = (src: string, dst: string) => {
+      const desc = reach(src, adjacency.children);
+      if (!desc.has(dst)) return null;
+      const anc = reach(dst, adjacency.parents);
+      const on = new Set<string>([src, dst]);
+      for (const id of desc) if (anc.has(id)) on.add(id);
+      return on;
+    };
+    const on = orient(a, b) ?? orient(b, a);
+    if (!on) return { nodes: new Set<string>([a, b]), edges: new Set<string>(), connected: false };
+    const edges = new Set<string>();
+    for (const e of graph.edges) if (on.has(e.src) && on.has(e.dst)) edges.add(`${e.src}->${e.dst}`);
+    return { nodes: on, edges, connected: true };
+  }, [relEndpoints, graph, adjacency]);
+
   // Search / filter: matched node set (name substring + test filter). Null when
   // no filter is active.
   const filterActive = search.trim() !== "" || testFilter !== "all";
@@ -190,22 +239,68 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     return matched;
   }, [graph, filterActive, search, testFilter]);
 
-  // Highlight priority: column trace > node selection > search filter.
+  // Column-flow data: the focused model's columns (for the picker) and the
+  // selected column's up+down lineage. Both hooks stay disabled unless the
+  // toggle is on inside a focus tab.
+  const { data: focusNode } = useNodeDetail(projectId, columnFlow ? focusId : null);
+  const { data: flowLineage, isFetching: flowLoading } = useColumnLineage(
+    projectId,
+    focusId,
+    columnFlow ? flowColumn : null,
+    "both",
+  );
+
+  // Leaving a focus tab (or switching tabs) resets the column-flow toggle so it
+  // never leaks a stale column onto a different model.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset keyed only on the active tab
+  useEffect(() => {
+    setColumnFlow(false);
+    setFlowColumn(null);
+  }, [activeKey]);
+
+  // Turning the toggle on with no column chosen defaults to the first traceable
+  // column so the canvas shows a flow immediately.
+  useEffect(() => {
+    if (columnFlow && focusNode && !flowColumn) {
+      const first = focusNode.columns.find((c) => c.has_lineage);
+      if (first) setFlowColumn(first.name);
+    }
+  }, [columnFlow, focusNode, flowColumn]);
+
+  // Nodes/edges touched by the traced column — same shape as a column trace,
+  // used to highlight the flow (and dim the rest) inside the focus subgraph.
+  const columnFlowHighlight = useMemo(() => {
+    if (!columnFlow || !focusId || !flowLineage) return null;
+    return {
+      nodes: new Set<string>(flowLineage.columns.map((c) => c.node_id)),
+      edges: new Set<string>(flowLineage.edges.map((e) => `${e.src.node_id}->${e.dst.node_id}`)),
+    };
+  }, [columnFlow, focusId, flowLineage]);
+
+  // Highlight priority: relationship > column trace > node selection > filter.
   const highlight = useMemo(() => {
+    // Relationship overrides even inside a focus tab: we always want off-path
+    // nodes dimmed so the green connecting route stands out.
+    if (relationship) return { nodes: relationship.nodes, edges: relationship.edges };
     if (trace) {
       return {
         nodes: new Set<string>(trace.lineage.columns.map((c) => c.node_id)),
         edges: new Set<string>(trace.lineage.edges.map((e) => `${e.src.node_id}->${e.dst.node_id}`)),
       };
     }
-    // In a focus tab everything shown is already the relevant subgraph. Selecting
-    // a node highlights its in/out ARROWS but does NOT dim the other nodes (which
-    // would make related nodes look unrelated).
-    if (focusId) return { nodes: undefined, edges: selectionHighlight?.edges };
+    // In a focus tab everything shown is already the relevant subgraph. Column
+    // flow is the exception: when tracing a column we DO dim off-path nodes so
+    // the source→…→consumer route stands out. Otherwise selecting a node only
+    // highlights its in/out ARROWS (dimming would make related nodes look
+    // unrelated).
+    if (focusId) {
+      if (columnFlowHighlight) return columnFlowHighlight;
+      return { nodes: undefined, edges: selectionHighlight?.edges };
+    }
     if (selectionHighlight) return selectionHighlight;
     if (filterMatch) return { nodes: filterMatch, edges: new Set<string>() };
     return { nodes: undefined, edges: undefined };
-  }, [trace, focusId, selectionHighlight, filterMatch]);
+  }, [relationship, trace, focusId, columnFlowHighlight, selectionHighlight, filterMatch]);
 
   // A trace often reaches into a collapsed layer (e.g. sources). Expand any
   // layer that contains a highlighted node so the path is actually visible.
@@ -253,6 +348,20 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     return set;
   }, [focusId, adjacency, focusDepth, focusDirection]);
 
+  // A connecting path often threads through a collapsed layer (e.g. sources).
+  // Expand every layer that holds a path node so the green route is visible.
+  useEffect(() => {
+    if (!relationship?.connected || !graph) return;
+    const touched = new Set<string>();
+    for (const n of graph.nodes) if (relationship.nodes.has(n.id)) touched.add(n.layer);
+    setCollapsed((prev) => {
+      if (![...touched].some((l) => prev.has(l))) return prev;
+      const next = new Set(prev);
+      for (const l of touched) next.delete(l);
+      return next;
+    });
+  }, [relationship, graph]);
+
   // Column-usage fractions for the selected node's neighbours.
   const { data: usage } = useColumnUsage(projectId, selectedNodeId);
 
@@ -263,6 +372,19 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const badges = useMemo(() => {
     const map = new Map<string, string>();
     if (!graph) return map;
+    // Column flow: tag every node on the traced column's path with its own
+    // column name(s) so you can read which column each upstream/downstream
+    // model contributes.
+    if (columnFlow && focusId && flowLineage) {
+      const byNode = new Map<string, Set<string>>();
+      for (const c of flowLineage.columns) {
+        const cols = byNode.get(c.node_id) ?? new Set<string>();
+        cols.add(c.column);
+        byNode.set(c.node_id, cols);
+      }
+      for (const [nid, cols] of byNode) map.set(nid, [...cols].join(", "));
+      return map;
+    }
     if (selectedNodeId) {
       const sel = graph.nodes.find((n) => n.id === selectedNodeId);
       if (sel) map.set(selectedNodeId, `${sel.metrics.column_count} cols`);
@@ -286,6 +408,9 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     colorByStatus,
     settings.badgeMetric,
     settings.showColumnFractions,
+    columnFlow,
+    focusId,
+    flowLineage,
   ]);
 
   const layout = useMemo(() => {
@@ -301,6 +426,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       tidy,
       flatten,
       colorByStatus,
+      connect: !!relationship,
     });
   }, [
     graph,
@@ -314,6 +440,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     tidy,
     flatten,
     colorByStatus,
+    relationship,
   ]);
 
   const reorderLayers = useCallback(
@@ -344,12 +471,50 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       if (node.type === "header" || node.type === "collapsed") {
         toggleLayer((node.data as { layer: string }).layer);
       } else if (node.type === "model") {
+        // In relationship mode a click feeds endpoints A→B (a third click
+        // restarts) instead of opening the single-selection panel.
+        if (relMode) {
+          setRelEndpoints((prev) => {
+            if (!prev.a) return { a: node.id, b: null };
+            if (!prev.b) return prev.a === node.id ? prev : { a: prev.a, b: node.id };
+            return { a: node.id, b: null };
+          });
+          return;
+        }
         setSelectedNodeId(node.id);
         setTrace(null);
       }
     },
-    [toggleLayer],
+    [toggleLayer, relMode],
   );
+
+  // Clicking empty canvas deselects the current model (and clears any column
+  // trace), returning to the un-dimmed "All" view without a full reload.
+  const onPaneClick = useCallback(() => {
+    setMenu(null);
+    setSelectedNodeId(null);
+    setTrace(null);
+  }, []);
+
+  // Focusing the search box takes priority over a single selection: drop the
+  // selection (and trace) so the search/filter highlight drives the canvas.
+  const onSearchFocus = useCallback(() => {
+    setSelectedNodeId(null);
+    setTrace(null);
+  }, []);
+
+  // Toggling the mode off clears endpoints; toggling on drops any single
+  // selection so the two interactions never fight over the highlight.
+  const toggleRelMode = useCallback(() => {
+    setRelMode((on) => {
+      if (on) setRelEndpoints({ a: null, b: null });
+      else {
+        setSelectedNodeId(null);
+        setTrace(null);
+      }
+      return !on;
+    });
+  }, []);
 
   // Right-click a model → context menu (focus / view columns).
   const onNodeContextMenu = useCallback((event: React.MouseEvent, node: RFNode) => {
@@ -378,7 +543,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
           nodeTypes={NODE_TYPES}
           onNodeClick={onNodeClick}
           onNodeContextMenu={onNodeContextMenu}
-          onPaneClick={() => setMenu(null)}
+          onPaneClick={onPaneClick}
           onMoveStart={() => setMenu(null)}
           fitView
           fitViewOptions={{ padding: 0.15, maxZoom: 1.2 }}
@@ -397,13 +562,25 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
         </ReactFlow>
 
         {focusId && (
-          <FocusDepthControl
-            depth={focusDepth}
-            onDepth={setFocusDepth}
-            direction={focusDirection}
-            onDirection={setFocusDirection}
-            count={focusSet?.size ?? 1}
-          />
+          <div className="absolute top-4 left-4 z-10 flex flex-col items-start gap-2">
+            <FocusDepthControl
+              depth={focusDepth}
+              onDepth={setFocusDepth}
+              direction={focusDirection}
+              onDirection={setFocusDirection}
+              count={focusSet?.size ?? 1}
+            />
+            <ColumnFlowControl
+              active={columnFlow}
+              onToggle={() => setColumnFlow((v) => !v)}
+              columns={focusNode?.columns ?? []}
+              column={flowColumn}
+              onColumn={setFlowColumn}
+              sourceCount={flowLineage?.source_columns.length ?? null}
+              partial={flowLineage?.partial ?? false}
+              loading={flowLoading}
+            />
+          </div>
         )}
 
         {/* Dock the controls into the right sidebar; when the sidebar is
@@ -441,9 +618,22 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
           <SearchBar
             search={search}
             onSearch={setSearch}
+            onFocus={onSearchFocus}
             testFilter={testFilter}
             onTestFilter={setTestFilter}
             matchCount={filterMatch?.size ?? null}
+          />
+          <RelationshipBar
+            active={relMode}
+            onToggle={toggleRelMode}
+            endpointA={
+              relEndpoints.a ? (graph.nodes.find((n) => n.id === relEndpoints.a)?.name ?? null) : null
+            }
+            endpointB={
+              relEndpoints.b ? (graph.nodes.find((n) => n.id === relEndpoints.b)?.name ?? null) : null
+            }
+            result={relationship}
+            onClear={() => setRelEndpoints({ a: null, b: null })}
           />
           {trace && (
             <div className="rounded-md border border-border bg-panel/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur">
@@ -550,7 +740,7 @@ function FocusDepthControl({
   const on = "bg-panel-2 text-fg";
   const off = "text-muted hover:text-fg";
   return (
-    <div className="absolute top-4 left-4 z-10 flex items-center gap-2 rounded-md border border-border bg-panel/95 px-2 py-1.5 text-xs shadow-lg backdrop-blur">
+    <div className="flex items-center gap-2 rounded-md border border-border bg-panel/95 px-2 py-1.5 text-xs shadow-lg backdrop-blur">
       <span className="text-muted">Show</span>
       <div className="flex overflow-hidden rounded border border-border">
         {(["up", "both", "down"] as FocusDirection[]).map((d) => (
@@ -578,6 +768,72 @@ function FocusDepthControl({
         ))}
       </div>
       <span className="text-muted">· {count - 1} related</span>
+    </div>
+  );
+}
+
+function ColumnFlowControl({
+  active,
+  onToggle,
+  columns,
+  column,
+  onColumn,
+  sourceCount,
+  partial,
+  loading,
+}: {
+  active: boolean;
+  onToggle: () => void;
+  columns: Column[];
+  column: string | null;
+  onColumn: (c: string) => void;
+  sourceCount: number | null;
+  partial: boolean;
+  loading: boolean;
+}) {
+  const traceable = columns.filter((c) => c.has_lineage);
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border bg-panel/95 px-2 py-1.5 text-xs shadow-lg backdrop-blur">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={active}
+        title="Trace one column's upstream sources and downstream propagation across this model's lineage"
+        className={cn(
+          "flex items-center gap-1.5 rounded border px-2 py-0.5",
+          active ? "border-sky-500 bg-sky-500/15 text-fg" : "border-border text-muted hover:text-fg",
+        )}
+      >
+        <Waypoints size={13} /> Column flow
+      </button>
+      {active &&
+        (traceable.length === 0 ? (
+          <span className="text-muted">no column lineage</span>
+        ) : (
+          <>
+            <select
+              value={column ?? ""}
+              onChange={(e) => onColumn(e.target.value)}
+              className="max-w-[160px] rounded border border-border bg-panel-2 px-1.5 py-0.5 text-fg outline-none"
+            >
+              {traceable.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            {loading ? (
+              <span className="text-muted">tracing…</span>
+            ) : (
+              sourceCount !== null && (
+                <span className="text-muted">
+                  {partial && <span className="text-amber-400">partial · </span>}
+                  {sourceCount} source col(s)
+                </span>
+              )
+            )}
+          </>
+        ))}
     </div>
   );
 }
@@ -634,12 +890,14 @@ function TabBar({
 function SearchBar({
   search,
   onSearch,
+  onFocus,
   testFilter,
   onTestFilter,
   matchCount,
 }: {
   search: string;
   onSearch: (v: string) => void;
+  onFocus: () => void;
   testFilter: "all" | "untested" | "tested";
   onTestFilter: (v: "all" | "untested" | "tested") => void;
   matchCount: number | null;
@@ -650,6 +908,7 @@ function SearchBar({
       <input
         value={search}
         onChange={(e) => onSearch(e.target.value)}
+        onFocus={onFocus}
         placeholder="Search models…"
         className="w-44 bg-transparent text-fg outline-none placeholder:text-muted"
       />
@@ -682,6 +941,76 @@ function SearchBar({
         </button>
       )}
     </div>
+  );
+}
+
+function RelationshipBar({
+  active,
+  onToggle,
+  endpointA,
+  endpointB,
+  result,
+  onClear,
+}: {
+  active: boolean;
+  onToggle: () => void;
+  endpointA: string | null;
+  endpointB: string | null;
+  result: { connected: boolean; nodes: Set<string> } | null;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border bg-panel/95 px-2 py-1 text-xs shadow-lg backdrop-blur">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={active}
+        title="Pick two models to check if (and how) they're connected"
+        className={cn(
+          "flex items-center gap-1.5 rounded border px-2 py-0.5",
+          active ? "border-emerald-500 bg-emerald-500/15 text-fg" : "border-border text-muted hover:text-fg",
+        )}
+      >
+        <Route size={13} /> Check relationship
+      </button>
+      {active && (
+        <>
+          <Endpoint label="A" name={endpointA} />
+          <span className="text-muted">→</span>
+          <Endpoint label="B" name={endpointB} />
+          {result &&
+            (result.connected ? (
+              <span className="text-emerald-400">connected · {result.nodes.size} model(s) on path</span>
+            ) : (
+              <span className="text-amber-400">not connected</span>
+            ))}
+          {(endpointA || endpointB) && (
+            <button
+              type="button"
+              onClick={onClear}
+              title="Clear endpoints"
+              className="text-muted hover:text-fg"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Endpoint({ label, name }: { label: string; name: string | null }) {
+  return (
+    <span
+      className={cn(
+        "flex items-center gap-1 rounded px-1.5 py-0.5",
+        name ? "bg-panel-2 text-fg" : "border border-border border-dashed text-muted",
+      )}
+    >
+      <span className="font-semibold text-emerald-400">{label}</span>
+      <span className="max-w-[140px] truncate">{name ?? "pick a model…"}</span>
+    </span>
   );
 }
 
