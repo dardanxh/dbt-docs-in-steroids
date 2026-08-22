@@ -3,7 +3,7 @@ import { Crosshair, Layers, PanelRight, Route, Scan, Search, Wand2, Waypoints, X
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSidebarSlot } from "@/features/app-shell/sidebar-slot";
-import { hotspotColor, layerColor, STATUS_LEGEND } from "@/lib/colors";
+import { hotspotColor, layerColor, ownerColor, riskScore, STATUS_LEGEND } from "@/lib/colors";
 import { useSettings, useThemeTokens } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import type { Column, ColumnLineage, MetricKey, NodeMetrics } from "@/types";
@@ -32,7 +32,15 @@ const METRICS: { key: MetricKey; label: string }[] = [
 // Categorical colorings (discrete palette + legend) live alongside the numeric
 // heat metrics in the same "Color by" dropdown.
 const STATUS_COLOR_KEY = "column_lineage_status";
-type ColorKey = MetricKey | typeof STATUS_COLOR_KEY;
+const OWNER_COLOR_KEY = "git_owner";
+const RISK_COLOR_KEY = "ownership_risk";
+type ColorKey = MetricKey | typeof STATUS_COLOR_KEY | typeof OWNER_COLOR_KEY | typeof RISK_COLOR_KEY;
+
+const METRIC_KEYS = new Set<string>(METRICS.map((m) => m.key));
+const isMetricKey = (k: ColorKey): k is MetricKey => METRIC_KEYS.has(k);
+
+// Owner names can be long; nodes only have room for a short label.
+const shortOwner = (owner: string): string => owner.split(/[\s@]/)[0] || owner;
 
 // Fractional metrics get fixed decimals; counts stay whole numbers.
 const DECIMALS: Partial<Record<keyof NodeMetrics, number>> = {
@@ -72,9 +80,13 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [colorBy, setColorBy] = useState<ColorKey>("downstream_count");
   const colorByStatus = colorBy === STATUS_COLOR_KEY;
+  const colorByOwner = colorBy === OWNER_COLOR_KEY;
+  const colorByRisk = colorBy === RISK_COLOR_KEY;
+  // Categorical/owner/risk colorings don't use the heat scale or metric badges.
+  const isCategorical = colorByStatus || colorByOwner || colorByRisk;
   // Numeric metric backing ordering + badges; falls back to a sensible default
-  // when a categorical coloring (e.g. status) is active.
-  const metric: MetricKey = colorByStatus ? "downstream_count" : colorBy;
+  // when a non-metric coloring (status/owner/risk) is active.
+  const metric: MetricKey = isMetricKey(colorBy) ? colorBy : "downstream_count";
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [trace, setTrace] = useState<Trace | null>(null);
   // "Check relationship" mode: a distinct interaction from single-selection.
@@ -112,6 +124,9 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const [flatten, setFlatten] = useState(false);
   const [search, setSearch] = useState("");
   const [testFilter, setTestFilter] = useState<"all" | "untested" | "tested">("all");
+  // Filter-by-owner: union of the selected actors' models is highlighted (like
+  // search). Driven by clicking chips in the owner legend.
+  const [ownerFilter, setOwnerFilter] = useState<Set<string>>(new Set());
   // Focus-tab depth control: how many hops of parents/children to include, and
   // in which direction. null depth = the whole lineage.
   const [focusDepth, setFocusDepth] = useState<number | null>(null);
@@ -170,6 +185,33 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     return { parents, children };
   }, [graph]);
 
+  // Distinct git owners with their model counts (desc). Empty when the project
+  // has no git ownership (upload-mode / non-git) — used to gate owner controls.
+  const owners = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (graph) {
+      for (const n of graph.nodes) {
+        const o = n.metrics.owner;
+        if (o) counts.set(o, (counts.get(o) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([owner, count]) => ({ owner, count }));
+  }, [graph]);
+  const ownershipTracked = owners.length > 0;
+
+  // Fall back to a metric coloring if the active project doesn't track ownership.
+  useEffect(() => {
+    if (!ownershipTracked && (colorByOwner || colorByRisk)) setColorBy("downstream_count");
+  }, [ownershipTracked, colorByOwner, colorByRisk]);
+
+  const toggleOwner = useCallback((owner: string) => {
+    setOwnerFilter((prev) => {
+      const next = new Set(prev);
+      next.has(owner) ? next.delete(owner) : next.add(owner);
+      return next;
+    });
+  }, []);
+
   // Clicking a model highlights it + its direct inputs/dependents (one hop) and
   // the arrows in/out of it; everything else dims.
   const selectionHighlight = useMemo(() => {
@@ -225,7 +267,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
 
   // Search / filter: matched node set (name substring + test filter). Null when
   // no filter is active.
-  const filterActive = search.trim() !== "" || testFilter !== "all";
+  const filterActive = search.trim() !== "" || testFilter !== "all" || ownerFilter.size > 0;
   const filterMatch = useMemo(() => {
     if (!graph || !filterActive) return null;
     const q = search.trim().toLowerCase();
@@ -234,10 +276,11 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       if (q && !n.name.toLowerCase().includes(q)) continue;
       if (testFilter === "untested" && !(n.resource_type === "model" && n.metrics.test_count === 0)) continue;
       if (testFilter === "tested" && !(n.metrics.test_count > 0)) continue;
+      if (ownerFilter.size > 0 && !(n.metrics.owner && ownerFilter.has(n.metrics.owner))) continue;
       matched.add(n.id);
     }
     return matched;
-  }, [graph, filterActive, search, testFilter]);
+  }, [graph, filterActive, search, testFilter, ownerFilter]);
 
   // Column-flow data: the focused model's columns (for the picker) and the
   // selected column's up+down lineage. Both hooks stay disabled unless the
@@ -393,7 +436,12 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
           map.set(u.node_id, u.total > 0 ? `${u.used}/${u.total}` : "–");
         }
       }
-    } else if (!colorByStatus && settings.badgeMetric !== "none") {
+    } else if (colorByOwner) {
+      // Label each node with its owner so the color legend is readable at a glance.
+      for (const n of graph.nodes) {
+        if (n.metrics.owner) map.set(n.id, shortOwner(n.metrics.owner));
+      }
+    } else if (!isCategorical && settings.badgeMetric !== "none") {
       for (const n of graph.nodes) {
         const v = n.metrics[metric];
         if (v != null && v !== 0) map.set(n.id, formatBadge(metric, v));
@@ -405,13 +453,33 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     selectedNodeId,
     usage,
     metric,
-    colorByStatus,
+    colorByOwner,
+    isCategorical,
     settings.badgeMetric,
     settings.showColumnFractions,
     columnFlow,
     focusId,
     flowLineage,
   ]);
+
+  // Owner / risk colorings resolve a full per-node tint map that overrides the
+  // metric heat scale in the layout (see layout.ts tintOverride).
+  const tintOverride = useMemo(() => {
+    if (!graph) return undefined;
+    if (colorByOwner) {
+      const m = new Map<string, string>();
+      for (const n of graph.nodes) m.set(n.id, ownerColor(n.metrics.owner));
+      return m;
+    }
+    if (colorByRisk) {
+      let maxDownstream = 0;
+      for (const n of graph.nodes) maxDownstream = Math.max(maxDownstream, n.metrics.downstream_count);
+      const m = new Map<string, string>();
+      for (const n of graph.nodes) m.set(n.id, hotspotColor(riskScore(n.metrics, maxDownstream)));
+      return m;
+    }
+    return undefined;
+  }, [graph, colorByOwner, colorByRisk]);
 
   const layout = useMemo(() => {
     if (!graph) return { nodes: [], edges: [] };
@@ -426,6 +494,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       tidy,
       flatten,
       colorByStatus,
+      tintOverride,
       connect: !!relationship,
     });
   }, [
@@ -440,6 +509,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     tidy,
     flatten,
     colorByStatus,
+    tintOverride,
     relationship,
   ]);
 
@@ -599,6 +669,11 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
               onTidy={() => setTidy((v) => !v)}
               flatten={flatten}
               onFlatten={() => setFlatten((v) => !v)}
+              owners={owners}
+              ownershipTracked={ownershipTracked}
+              ownerFilter={ownerFilter}
+              onToggleOwner={toggleOwner}
+              onClearOwners={() => setOwnerFilter(new Set())}
             />,
             sidebarSlot,
           )}
@@ -1025,6 +1100,11 @@ function Toolbar({
   onTidy,
   flatten,
   onFlatten,
+  owners,
+  ownershipTracked,
+  ownerFilter,
+  onToggleOwner,
+  onClearOwners,
 }: {
   colorBy: ColorKey;
   onColorBy: (m: ColorKey) => void;
@@ -1036,6 +1116,11 @@ function Toolbar({
   onTidy: () => void;
   flatten: boolean;
   onFlatten: () => void;
+  owners: { owner: string; count: number }[];
+  ownershipTracked: boolean;
+  ownerFilter: Set<string>;
+  onToggleOwner: (owner: string) => void;
+  onClearOwners: () => void;
 }) {
   return (
     <div className="flex flex-col gap-2 border-border border-t px-3 py-3 text-xs">
@@ -1056,10 +1141,21 @@ function Toolbar({
           </optgroup>
           <optgroup label="Categories">
             <option value={STATUS_COLOR_KEY}>Column lineage status</option>
+            {ownershipTracked && <option value={OWNER_COLOR_KEY}>Git owner</option>}
+            {ownershipTracked && <option value={RISK_COLOR_KEY}>Ownership risk (bus factor)</option>}
           </optgroup>
         </select>
       </div>
-      <Legend status={colorBy === STATUS_COLOR_KEY} />
+      {colorBy === OWNER_COLOR_KEY ? (
+        <OwnerLegend
+          owners={owners}
+          ownerFilter={ownerFilter}
+          onToggleOwner={onToggleOwner}
+          onClearOwners={onClearOwners}
+        />
+      ) : (
+        <Legend status={colorBy === STATUS_COLOR_KEY} />
+      )}
       <div className="flex flex-col gap-1">
         <span className="text-muted">Layout</span>
         <div className="flex items-center gap-2">
@@ -1157,6 +1253,58 @@ function Legend({ status }: { status: boolean }) {
         ))}
       </div>
       <span className="text-muted">high</span>
+    </div>
+  );
+}
+
+// Actor legend for "Color by: Git owner". Each row is a clickable chip that
+// toggles the owner into the filter (union across selected actors), mirroring
+// how search selects a node set.
+function OwnerLegend({
+  owners,
+  ownerFilter,
+  onToggleOwner,
+  onClearOwners,
+}: {
+  owners: { owner: string; count: number }[];
+  ownerFilter: Set<string>;
+  onToggleOwner: (owner: string) => void;
+  onClearOwners: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between text-[10px] text-muted">
+        <span>{owners.length} owners · click to filter</span>
+        {ownerFilter.size > 0 && (
+          <button type="button" onClick={onClearOwners} className="underline hover:text-fg">
+            clear ({ownerFilter.size})
+          </button>
+        )}
+      </div>
+      <div className="flex max-h-52 flex-col gap-0.5 overflow-y-auto pr-1">
+        {owners.map(({ owner, count }) => {
+          const active = ownerFilter.has(owner);
+          return (
+            <button
+              key={owner}
+              type="button"
+              onClick={() => onToggleOwner(owner)}
+              aria-pressed={active}
+              title={owner}
+              className={cn(
+                "flex items-center gap-2 rounded px-1.5 py-1 text-left text-[11px]",
+                active
+                  ? "bg-accent/15 text-fg ring-1 ring-accent/40"
+                  : "text-muted hover:bg-panel-2 hover:text-fg",
+              )}
+            >
+              <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: ownerColor(owner) }} />
+              <span className="min-w-0 flex-1 truncate">{owner}</span>
+              <span className="shrink-0 tabular-nums text-muted">{count}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

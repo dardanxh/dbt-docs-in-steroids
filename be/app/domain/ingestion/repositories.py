@@ -65,6 +65,11 @@ class LineagePersistenceRepository:
                     "test_count": m.test_count,
                     "column_count": m.column_count,
                     "column_lineage_status": status_by_node.get(node.unique_id),
+                    "owner": node.owner,
+                    "owner_share": node.owner_share,
+                    "contributor_count": node.contributor_count,
+                    "last_author": node.last_author,
+                    "last_modified_at": node.last_modified_at,
                 }
             )
             for col in node.columns:

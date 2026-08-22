@@ -1,4 +1,6 @@
-from sqlalchemy import Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import TIMESTAMP, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -53,6 +55,14 @@ class Node(Base):
     column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     column_lineage_status: Mapped[str | None] = mapped_column(String(20), nullable=True)  # ok | partial | failed
+
+    # Git ownership (top contributor by lines added). Null for upload-mode or
+    # non-git projects; computed once at ingestion from the working tree.
+    owner: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    owner_share: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0..1
+    contributor_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_author: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_modified_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
 
 
 class NodeColumn(Base):

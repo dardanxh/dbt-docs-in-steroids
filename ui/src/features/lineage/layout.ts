@@ -22,7 +22,7 @@ export interface ModelNodeData {
   label: string;
   layer: string;
   resourceType: string;
-  tint: string; // resolved node fill color (heat scale, or status color)
+  tint: string; // resolved node fill color (heat scale, status, owner, or risk)
   columnLineageStatus: string | null;
   dimmed: boolean;
   highlighted: boolean;
@@ -56,6 +56,7 @@ export interface LayoutOptions {
   tidy?: boolean; // reorder within columns to reduce edge crossings
   flatten?: boolean; // ignore semantic layers; columns = dependency depth
   colorByStatus?: boolean; // tint by column-lineage status instead of the metric heat scale
+  tintOverride?: Map<string, string>; // node id -> fill color (owner / risk modes); wins over metric/status
   connect?: boolean; // relationship mode: paint the highlighted path/edges green
 }
 
@@ -168,9 +169,11 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
           label: n.name,
           layer: n.layer,
           resourceType: n.resource_type,
-          tint: opts.colorByStatus
-            ? statusColor(n.column_lineage_status)
-            : hotspotColor(norm(n.metrics[metric] ?? 0)),
+          tint:
+            opts.tintOverride?.get(n.id) ??
+            (opts.colorByStatus
+              ? statusColor(n.column_lineage_status)
+              : hotspotColor(norm(n.metrics[metric] ?? 0))),
           columnLineageStatus: n.column_lineage_status,
           dimmed: hasHighlight && !highlighted,
           highlighted,

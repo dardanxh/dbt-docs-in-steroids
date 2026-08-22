@@ -241,6 +241,7 @@ export interface components {
             column_edges: number;
             /** Most Used */
             most_used: components["schemas"]["MostUsedModel"][];
+            ownership: components["schemas"]["OwnershipStats"];
             /** Dbt Version */
             dbt_version: string | null;
             /** Adapter */
@@ -478,6 +479,45 @@ export interface components {
             test_count: number;
             /** Column Count */
             column_count: number;
+            /** Owner */
+            owner?: string | null;
+            /** Owner Share */
+            owner_share?: number | null;
+            /**
+             * Contributor Count
+             * @default 0
+             */
+            contributor_count: number;
+            /** Last Author */
+            last_author?: string | null;
+            /** Last Modified At */
+            last_modified_at?: string | null;
+        };
+        /** OwnerStat */
+        OwnerStat: {
+            /** Owner */
+            owner: string;
+            /** Model Count */
+            model_count: number;
+            /** Avg Share */
+            avg_share: number;
+        };
+        /** OwnershipStats */
+        OwnershipStats: {
+            /** Tracked */
+            tracked: boolean;
+            /** Leaderboard */
+            leaderboard: components["schemas"]["OwnerStat"][];
+            /** By Layer */
+            by_layer: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            /** Risk */
+            risk: {
+                [key: string]: number;
+            };
         };
         /** ProjectResult */
         ProjectResult: {

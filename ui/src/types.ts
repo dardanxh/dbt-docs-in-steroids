@@ -25,9 +25,28 @@ export interface NodeMetrics {
   cohesion: number;
   test_count: number;
   column_count: number;
+  // Git ownership (null for upload-mode / non-git projects).
+  owner: string | null;
+  owner_share: number | null;
+  contributor_count: number;
+  last_author: string | null;
+  last_modified_at: string | null;
 }
 
-export type MetricKey = keyof NodeMetrics;
+// Numeric heat metrics only (excludes the git-ownership fields above).
+export type MetricKey =
+  | "fan_in"
+  | "fan_out"
+  | "upstream_count"
+  | "downstream_count"
+  | "degree_centrality"
+  | "betweenness"
+  | "hotspot_score"
+  | "loc"
+  | "complexity"
+  | "cohesion"
+  | "test_count"
+  | "column_count";
 
 export interface GraphNode {
   id: string;
@@ -131,6 +150,19 @@ export interface MostUsedModel {
   downstream_count: number;
 }
 
+export interface OwnerStat {
+  owner: string;
+  model_count: number;
+  avg_share: number;
+}
+
+export interface OwnershipStats {
+  tracked: boolean;
+  leaderboard: OwnerStat[];
+  by_layer: Record<string, Record<string, number>>;
+  risk: Record<string, number>; // orphaned / solo / contested / stale / total_models
+}
+
 export interface Analytics {
   counts: Record<string, number>;
   by_layer: Record<string, number>;
@@ -139,6 +171,7 @@ export interface Analytics {
   node_edges: number;
   column_edges: number;
   most_used: MostUsedModel[];
+  ownership: OwnershipStats;
   dbt_version: string | null;
   adapter: string | null;
 }

@@ -1,7 +1,7 @@
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { layerColor } from "@/lib/colors";
+import { layerColor, ownerColor } from "@/lib/colors";
 import { useThemeTokens } from "@/lib/settings";
-import type { Analytics } from "@/types";
+import type { Analytics, OwnershipStats } from "@/types";
 import { useAnalytics } from "./api";
 
 const CHART_COLORS = ["#818cf8", "#38bdf8", "#f472b6", "#34d399", "#fbbf24", "#94a3b8"];
@@ -87,7 +87,64 @@ export function AnalyticsDashboard({ projectId }: { projectId: string }) {
         <Card title="Most-used models (downstream)">
           <MostUsed data={data} />
         </Card>
+
+        {data.ownership.tracked && (
+          <>
+            <Card title="Model owners (git)">
+              <OwnerLeaderboard ownership={data.ownership} />
+            </Card>
+            <Card title="Ownership risk">
+              <RiskSummary ownership={data.ownership} />
+            </Card>
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+function OwnerLeaderboard({ ownership }: { ownership: OwnershipStats }) {
+  const top = ownership.leaderboard.slice(0, 10);
+  const max = top[0]?.model_count || 1;
+  return (
+    <ul className="space-y-1.5">
+      {top.map((o) => (
+        <li key={o.owner} className="text-xs">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: ownerColor(o.owner) }} />
+            <span className="min-w-0 flex-1 truncate text-fg" title={o.owner}>
+              {o.owner}
+            </span>
+            <span className="shrink-0 font-medium text-muted">{o.model_count}</span>
+          </div>
+          <div className="mt-1 ml-[18px] h-1.5 overflow-hidden rounded bg-panel-2">
+            <div
+              className="h-full rounded"
+              style={{ width: `${(o.model_count / max) * 100}%`, background: ownerColor(o.owner) }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RiskSummary({ ownership }: { ownership: OwnershipStats }) {
+  const r = ownership.risk;
+  const items: [string, number, string][] = [
+    ["Solo-owned", r.solo ?? 0, "Only one contributor — bus-factor risk"],
+    ["Stale", r.stale ?? 0, "No commit in over a year"],
+    ["Contested", r.contested ?? 0, "No single owner above 50%"],
+    ["Orphaned", r.orphaned ?? 0, "No git owner attributed"],
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {items.map(([label, value, hint]) => (
+        <div key={label} className="rounded border border-border bg-panel-2 px-3 py-2" title={hint}>
+          <div className="font-semibold text-fg text-xl">{value}</div>
+          <div className="text-[11px] text-muted">{label}</div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.enums import IngestStatus, ParseStatus
 from app.core.exceptions import BadRequestError, NotFoundError
+from app.domain.ingestion import git_ownership
 from app.domain.ingestion.artifacts import ArtifactBundle, load_from_path
 from app.domain.ingestion.column_lineage import build_column_edges
 from app.domain.ingestion.graph_builder import build_graph
@@ -55,6 +56,7 @@ class IngestionService:
         try:
             graph = build_graph(bundle)
             column_edges, diagnostics = build_column_edges(graph)
+            self._attach_ownership(project.source_ref, graph)
             self.persistence.persist(project_id, graph, column_edges, diagnostics)
 
             project.manifest_hash = bundle.manifest_hash
@@ -74,6 +76,25 @@ class IngestionService:
 
         self.session.refresh(project)
         return ProjectResult.model_validate(project)
+
+    @staticmethod
+    def _attach_ownership(source_ref: str | None, graph: BuiltGraph) -> None:
+        """Populate git-ownership fields on each node's spec (best-effort).
+
+        No-op for upload-mode / non-git projects (compute returns ``{}``).
+        """
+        ownership = git_ownership.compute(source_ref)
+        if not ownership:
+            return
+        for node in graph.nodes.values():
+            info = ownership.get(node.file_path) if node.file_path else None
+            if info is None:
+                continue
+            node.owner = info.owner
+            node.owner_share = info.owner_share
+            node.contributor_count = info.contributor_count
+            node.last_author = info.last_author
+            node.last_modified_at = info.last_modified_at
 
     @staticmethod
     def _build_stats(

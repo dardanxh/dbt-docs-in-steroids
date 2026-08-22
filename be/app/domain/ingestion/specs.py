@@ -8,6 +8,7 @@ transaction.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from app.core.enums import Confidence, Layer, ParseStatus, ResourceType, TransformType
 
@@ -57,6 +58,12 @@ class NodeSpec:
     # (database, schema, table) lowercased — how this node appears in compiled SQL.
     relation_key: tuple[str, str, str] | None = None
     metrics: NodeMetrics = field(default_factory=NodeMetrics)
+    # Git ownership (best-effort; populated only for PATH projects in a git repo).
+    owner: str | None = None  # top contributor by lines added
+    owner_share: float | None = None  # owner's share of attributed lines, 0..1
+    contributor_count: int = 0
+    last_author: str | None = None  # author of the most recent commit
+    last_modified_at: datetime | None = None
 
 
 @dataclass

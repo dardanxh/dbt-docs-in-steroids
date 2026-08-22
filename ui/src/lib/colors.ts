@@ -66,3 +66,66 @@ export const STATUS_LEGEND: Array<{ key: string; label: string; color: string }>
 export function statusColor(status: string | null): string {
   return (status && STATUS_COLORS[status]) ?? "#475569";
 }
+
+// --- Git ownership --------------------------------------------------------
+
+// Distinct, saturated hues for coloring nodes by their top git contributor.
+// Deterministically hashed so a given actor keeps the same color across renders.
+const OWNER_PALETTE = [
+  "#38bdf8", // sky
+  "#f472b6", // pink
+  "#34d399", // emerald
+  "#fbbf24", // amber
+  "#a78bfa", // violet
+  "#fb7185", // rose
+  "#4ade80", // green
+  "#f59e0b", // orange
+  "#22d3ee", // cyan
+  "#c084fc", // purple
+  "#facc15", // yellow
+  "#2dd4bf", // teal
+  "#60a5fa", // blue
+  "#e879f9", // fuchsia
+];
+
+const UNOWNED_COLOR = "#475569"; // slate — no git owner (upload-mode / untracked file)
+
+export function ownerColor(owner: string | null | undefined): string {
+  if (!owner) return UNOWNED_COLOR;
+  let hash = 0;
+  for (let i = 0; i < owner.length; i++) {
+    hash = (hash << 5) - hash + owner.charCodeAt(i);
+    hash |= 0; // 32-bit
+  }
+  return OWNER_PALETTE[Math.abs(hash) % OWNER_PALETTE.length];
+}
+
+const DAY_MS = 86_400_000;
+
+// A model whose most recent commit is older than `days` is "stale".
+export function isStale(iso: string | null | undefined, days = 365): boolean {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t > days * DAY_MS;
+}
+
+// Bus-factor / knowledge-risk overlay (0..1), fed through the hotspot heat scale.
+// Combines blast radius (downstream impact), ownership concentration (solo owner
+// or dominant share), and staleness. Nodes without git ownership score 0 (cold).
+export function riskScore(
+  m: {
+    owner: string | null;
+    downstream_count: number;
+    contributor_count: number;
+    owner_share: number | null;
+    last_modified_at: string | null;
+  },
+  maxDownstream: number,
+): number {
+  if (!m.owner) return 0;
+  const impact = maxDownstream > 0 ? m.downstream_count / maxDownstream : 0;
+  const solo = m.contributor_count <= 1 ? 1 : Math.max(0, m.owner_share ?? 0);
+  const stale = isStale(m.last_modified_at) ? 1 : 0.35;
+  return impact * (0.35 + 0.65 * solo) * stale;
+}

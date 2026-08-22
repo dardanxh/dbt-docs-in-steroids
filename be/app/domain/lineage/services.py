@@ -75,6 +75,11 @@ class LineageService:
             cohesion=node.cohesion,
             test_count=node.test_count,
             column_count=node.column_count,
+            owner=node.owner,
+            owner_share=node.owner_share,
+            contributor_count=node.contributor_count,
+            last_author=node.last_author,
+            last_modified_at=node.last_modified_at,
         )
 
     def graph(self, project_id: str) -> GraphResponse:

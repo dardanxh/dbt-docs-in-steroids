@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -16,6 +18,12 @@ class NodeMetricsOut(BaseModel):
     cohesion: float
     test_count: int
     column_count: int
+    # Git ownership (null for upload-mode / non-git projects).
+    owner: str | None = None
+    owner_share: float | None = None
+    contributor_count: int = 0
+    last_author: str | None = None
+    last_modified_at: datetime | None = None
 
 
 class GraphNodeOut(BaseModel):

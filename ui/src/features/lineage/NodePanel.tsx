@@ -1,8 +1,8 @@
 import { Check, Code2, Copy, Crosshair, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { apiGet } from "@/lib/api";
-import { layerColor, TRANSFORM_COLORS } from "@/lib/colors";
+import { isStale, layerColor, ownerColor, TRANSFORM_COLORS } from "@/lib/colors";
 import { useSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import type { ColumnLineage, NodeDetail } from "@/types";
@@ -89,6 +89,7 @@ export function NodePanel({
       ) : (
         <div className="flex-1 overflow-y-auto">
           <Metrics node={node} />
+          <Ownership node={node} />
           {node.description && (
             <p className="border-border border-b px-4 py-3 text-muted text-xs leading-relaxed">
               {node.description}
@@ -226,6 +227,57 @@ function Metrics({ node }: { node: NodeDetail }) {
       <Grid items={quality} />
     </div>
   );
+}
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - Date.parse(iso);
+  if (Number.isNaN(diff)) return "";
+  const days = Math.floor(diff / 86_400_000);
+  if (days < 1) return "today";
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
+
+// Git ownership: top contributor + share, contested/solo/stale badges, and who
+// last touched the model. Hidden when the project has no git ownership data.
+function Ownership({ node }: { node: NodeDetail }) {
+  const m = node.metrics;
+  if (!m.owner) return null;
+  const share = m.owner_share != null ? Math.round(m.owner_share * 100) : null;
+  const solo = m.contributor_count <= 1;
+  const contested = m.owner_share != null && m.owner_share < 0.5;
+  const stale = isStale(m.last_modified_at);
+  return (
+    <div className="border-border border-b px-4 py-3 text-xs">
+      <div className="mb-2 font-semibold text-fg">Ownership</div>
+      <div className="flex items-center gap-2">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: ownerColor(m.owner) }} />
+        <span className="min-w-0 flex-1 truncate font-medium text-fg" title={m.owner}>
+          {m.owner}
+        </span>
+        {share != null && <span className="shrink-0 text-muted">owns {share}%</span>}
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+        <span className="text-muted">
+          {m.contributor_count} contributor{m.contributor_count === 1 ? "" : "s"}
+        </span>
+        {solo ? <Badge tone="amber">solo owner</Badge> : contested && <Badge tone="slate">contested</Badge>}
+        {stale && <Badge tone="amber">stale</Badge>}
+      </div>
+      {m.last_author && m.last_modified_at && (
+        <div className="mt-1.5 text-[11px] text-muted">
+          Last touched by <span className="text-fg">{m.last_author}</span> ·{" "}
+          {relativeTime(m.last_modified_at)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Badge({ tone, children }: { tone: "amber" | "slate"; children: ReactNode }) {
+  const cls = tone === "amber" ? "bg-amber-500/15 text-amber-400" : "bg-panel-2 text-muted";
+  return <span className={cn("rounded px-1.5 py-0.5", cls)}>{children}</span>;
 }
 
 function Grid({ items }: { items: [string, number | string, string][] }) {
