@@ -26,6 +26,7 @@ from app.domain.lineage.schemas import (
     NodeDetailOut,
     NodeMetricsOut,
 )
+from app.domain.model_errors.repositories import ModelErrorsRepository
 
 # Canonical left-to-right ordering of layers in the graph (sources feed models
 # feed marts feed reporting).
@@ -60,8 +61,9 @@ class LineageService:
     def __init__(self, session: Session):
         self.session = session
         self.repo = LineageReadRepository(session)
+        self.errors = ModelErrorsRepository(session)
 
-    def _metrics(self, node: Node) -> NodeMetricsOut:
+    def _metrics(self, node: Node, error_count: int = 0) -> NodeMetricsOut:
         return NodeMetricsOut(
             fan_in=node.fan_in,
             fan_out=node.fan_out,
@@ -80,6 +82,7 @@ class LineageService:
             contributor_count=node.contributor_count,
             last_author=node.last_author,
             last_modified_at=node.last_modified_at,
+            error_count=error_count,
         )
 
     def graph(self, project_id: str) -> GraphResponse:
@@ -88,6 +91,7 @@ class LineageService:
             raise NotFoundError(f"No ingested graph for project {project_id}")
         edges = self.repo.edges(project_id)
         layer_of = {n.unique_id: n.layer for n in nodes}
+        error_counts = self.errors.counts_by_node(project_id)
 
         node_outs = [
             GraphNodeOut(
@@ -97,7 +101,7 @@ class LineageService:
                 layer=n.layer,
                 materialized=n.materialized,
                 column_lineage_status=n.column_lineage_status,
-                metrics=self._metrics(n),
+                metrics=self._metrics(n, error_counts.get(n.unique_id, 0)),
             )
             for n in nodes
         ]
@@ -174,7 +178,7 @@ class LineageService:
             file_path=node.file_path,
             description=node.description,
             tags=list(node.tags or []),
-            metrics=self._metrics(node),
+            metrics=self._metrics(node, len(self.errors.by_node(project_id, unique_id))),
             columns=columns,
             parents=parents,
             children=children,

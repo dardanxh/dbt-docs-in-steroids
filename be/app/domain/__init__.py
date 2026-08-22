@@ -7,6 +7,7 @@ autogenerates or routes resolve.
 
 from app.core.db import Base
 from app.domain.lineage import models as lineage_models  # noqa: F401
+from app.domain.model_errors import models as model_errors_models  # noqa: F401
 from app.domain.project import models as project_models  # noqa: F401
 
 __all__ = ["Base"]

@@ -24,6 +24,8 @@ class NodeMetricsOut(BaseModel):
     contributor_count: int = 0
     last_author: str | None = None
     last_modified_at: datetime | None = None
+    # Operational errors uploaded for this model (0 when none / not tracked).
+    error_count: int = 0
 
 
 class GraphNodeOut(BaseModel):

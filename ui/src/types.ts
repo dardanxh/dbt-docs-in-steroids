@@ -31,6 +31,17 @@ export interface NodeMetrics {
   contributor_count: number;
   last_author: string | null;
   last_modified_at: string | null;
+  // Operational errors uploaded for this model (0 when none).
+  error_count: number;
+}
+
+export interface ModelError {
+  id: number;
+  occurred_at: string;
+  category: string;
+  message: string;
+  phase: string | null;
+  details: Record<string, unknown> | null;
 }
 
 // Numeric heat metrics only (excludes the git-ownership fields above).
@@ -163,6 +174,26 @@ export interface OwnershipStats {
   risk: Record<string, number>; // orphaned / solo / contested / stale / total_models
 }
 
+export interface ErrorProneModel {
+  node_id: string;
+  name: string;
+  layer: string;
+  error_count: number;
+}
+
+export interface ErrorTimeBucket {
+  month: string;
+  count: number;
+}
+
+export interface ErrorAnalytics {
+  tracked: boolean;
+  total: number;
+  most_error_prone: ErrorProneModel[];
+  by_category: Record<string, number>;
+  over_time: ErrorTimeBucket[];
+}
+
 export interface Analytics {
   counts: Record<string, number>;
   by_layer: Record<string, number>;
@@ -172,6 +203,7 @@ export interface Analytics {
   column_edges: number;
   most_used: MostUsedModel[];
   ownership: OwnershipStats;
+  errors: ErrorAnalytics;
   dbt_version: string | null;
   adapter: string | null;
 }

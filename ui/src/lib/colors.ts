@@ -40,6 +40,50 @@ export function hotspotColor(t: number): string {
   return "rgb(239,68,68)";
 }
 
+// Green → amber → red scale for "Color by: Errors" — healthy models stay green,
+// the most error-prone go red. Same interpolation shape as hotspotColor.
+const ERROR_STOPS: Array<[number, [number, number, number]]> = [
+  [0.0, [34, 197, 94]], // green (no / few errors)
+  [0.5, [251, 191, 36]], // amber
+  [1.0, [239, 68, 68]], // red (most errors)
+];
+
+export function errorColor(t: number): string {
+  const x = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < ERROR_STOPS.length - 1; i++) {
+    const [t0, c0] = ERROR_STOPS[i];
+    const [t1, c1] = ERROR_STOPS[i + 1];
+    if (x >= t0 && x <= t1) {
+      const f = (x - t0) / (t1 - t0 || 1);
+      const r = Math.round(c0[0] + (c1[0] - c0[0]) * f);
+      const g = Math.round(c0[1] + (c1[1] - c0[1]) * f);
+      const b = Math.round(c0[2] + (c1[2] - c0[2]) * f);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+  }
+  return "rgb(239,68,68)";
+}
+
+// Fixed palette for error categories (timeline badges + analytics charts). Keys
+// mirror the backend ErrorCategory enum; unknown categories fall back to slate.
+export const ERROR_CATEGORY_COLORS: Record<string, string> = {
+  test_failure: "#f472b6",
+  compilation_error: "#f59e0b",
+  sql_runtime_error: "#ef4444",
+  freshness_error: "#22d3ee",
+  upstream_failure: "#a78bfa",
+  permission_error: "#fb7185",
+  resource_limit: "#fbbf24",
+  dependency_missing: "#60a5fa",
+  connection_error: "#2dd4bf",
+  configuration_error: "#c084fc",
+  other: "#94a3b8",
+};
+
+export function errorCategoryColor(category: string): string {
+  return ERROR_CATEGORY_COLORS[category] ?? "#94a3b8";
+}
+
 export const TRANSFORM_COLORS: Record<string, string> = {
   direct: "#34d399",
   derived: "#fbbf24",

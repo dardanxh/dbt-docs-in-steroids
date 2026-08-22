@@ -213,6 +213,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Errors */
+        post: operations["upload_errors_api_v1_projects__project_id__errors_post"];
+        /** Clear Errors */
+        delete: operations["clear_errors_api_v1_projects__project_id__errors_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/nodes/{node_id}/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Node Errors */
+        get: operations["get_node_errors_api_v1_projects__project_id__nodes__node_id__errors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -242,6 +277,7 @@ export interface components {
             /** Most Used */
             most_used: components["schemas"]["MostUsedModel"][];
             ownership: components["schemas"]["OwnershipStats"];
+            errors: components["schemas"]["ErrorAnalytics"];
             /** Dbt Version */
             dbt_version: string | null;
             /** Adapter */
@@ -340,6 +376,59 @@ export interface components {
             /** Dst */
             dst: string;
         };
+        /** ErrorAnalytics */
+        ErrorAnalytics: {
+            /** Tracked */
+            tracked: boolean;
+            /** Total */
+            total: number;
+            /** Most Error Prone */
+            most_error_prone: components["schemas"]["ErrorProneModel"][];
+            /** By Category */
+            by_category: {
+                [key: string]: number;
+            };
+            /** Over Time */
+            over_time: components["schemas"]["TimeBucket"][];
+        };
+        /**
+         * ErrorCategory
+         * @description Classification of a dbt operational failure, assigned by the uploading
+         *     agent. Kept fixed so coloring/analytics stay consistent.
+         * @enum {string}
+         */
+        ErrorCategory: "test_failure" | "compilation_error" | "sql_runtime_error" | "freshness_error" | "upstream_failure" | "permission_error" | "resource_limit" | "dependency_missing" | "connection_error" | "configuration_error" | "other";
+        /**
+         * ErrorItem
+         * @description One error occurrence for a model (agent-supplied).
+         */
+        ErrorItem: {
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            category: components["schemas"]["ErrorCategory"];
+            /** Message */
+            message: string;
+            /** Phase */
+            phase?: string | null;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** ErrorProneModel */
+        ErrorProneModel: {
+            /** Node Id */
+            node_id: string;
+            /** Name */
+            name: string;
+            /** Layer */
+            layer: string;
+            /** Error Count */
+            error_count: number;
+        };
         /** GraphNodeOut */
         GraphNodeOut: {
             /** Id */
@@ -407,6 +496,42 @@ export interface components {
             value: number;
             /** Normalized */
             normalized: number;
+        };
+        /** ModelErrorOut */
+        ModelErrorOut: {
+            /** Id */
+            id: number;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Category */
+            category: string;
+            /** Message */
+            message: string;
+            /** Phase */
+            phase: string | null;
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** ModelErrorsForModel */
+        ModelErrorsForModel: {
+            /** Model */
+            model: string;
+            /** Errors */
+            errors: components["schemas"]["ErrorItem"][];
+        };
+        /**
+         * ModelErrorsUpload
+         * @description Bulk upload payload. Replace-per-model: each listed model's errors fully
+         *     replace whatever is stored for it.
+         */
+        ModelErrorsUpload: {
+            /** Models */
+            models: components["schemas"]["ModelErrorsForModel"][];
         };
         /** MostUsedModel */
         MostUsedModel: {
@@ -492,6 +617,11 @@ export interface components {
             last_author?: string | null;
             /** Last Modified At */
             last_modified_at?: string | null;
+            /**
+             * Error Count
+             * @default 0
+             */
+            error_count: number;
         };
         /** OwnerStat */
         OwnerStat: {
@@ -546,6 +676,24 @@ export interface components {
          * @enum {string}
          */
         SourceType: "path" | "upload";
+        /** TimeBucket */
+        TimeBucket: {
+            /** Month */
+            month: string;
+            /** Count */
+            count: number;
+        };
+        /** UploadResult */
+        UploadResult: {
+            /** Models Received */
+            models_received: number;
+            /** Models Matched */
+            models_matched: number;
+            /** Errors Inserted */
+            errors_inserted: number;
+            /** Unresolved */
+            unresolved: string[];
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -980,6 +1128,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnalyticsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_errors_api_v1_projects__project_id__errors_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelErrorsUpload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_errors_api_v1_projects__project_id__errors_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_node_errors_api_v1_projects__project_id__nodes__node_id__errors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelErrorOut"][];
                 };
             };
             /** @description Validation Error */

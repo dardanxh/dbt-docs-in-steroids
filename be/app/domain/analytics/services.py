@@ -6,9 +6,18 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.domain.analytics.schemas import AnalyticsResponse, MostUsedModel, OwnershipStats, OwnerStat
+from app.domain.analytics.schemas import (
+    AnalyticsResponse,
+    ErrorAnalytics,
+    ErrorProneModel,
+    MostUsedModel,
+    OwnershipStats,
+    OwnerStat,
+    TimeBucket,
+)
 from app.domain.lineage.models import Node
 from app.domain.lineage.repositories import LineageReadRepository
+from app.domain.model_errors.repositories import ModelErrorsRepository
 from app.domain.project.repositories import ProjectRepository
 
 _TOP_N = 15
@@ -21,6 +30,7 @@ class AnalyticsService:
         self.session = session
         self.projects = ProjectRepository(session)
         self.lineage = LineageReadRepository(session)
+        self.errors = ModelErrorsRepository(session)
 
     def analytics(self, project_id: str) -> AnalyticsResponse:
         project = self.projects.get(project_id)
@@ -49,8 +59,34 @@ class AnalyticsService:
                 for n in most_used
             ],
             ownership=self._ownership(models),
+            errors=self._errors(project_id, nodes),
             dbt_version=stats.get("dbt_version"),
             adapter=stats.get("adapter"),
+        )
+
+    def _errors(self, project_id: str, nodes: list[Node]) -> ErrorAnalytics:
+        """Aggregate uploaded errors into a leaderboard + category + time series."""
+        counts_by_node = self.errors.counts_by_node(project_id)
+        if not counts_by_node:
+            return ErrorAnalytics(tracked=False, total=0, most_error_prone=[], by_category={}, over_time=[])
+
+        node_by_id = {n.unique_id: n for n in nodes}
+        ranked = sorted(counts_by_node.items(), key=lambda kv: kv[1], reverse=True)[:_TOP_N]
+        most_error_prone = [
+            ErrorProneModel(
+                node_id=uid,
+                name=node_by_id[uid].name if uid in node_by_id else uid,
+                layer=node_by_id[uid].layer if uid in node_by_id else "other",
+                error_count=count,
+            )
+            for uid, count in ranked
+        ]
+        return ErrorAnalytics(
+            tracked=True,
+            total=self.errors.total(project_id),
+            most_error_prone=most_error_prone,
+            by_category=self.errors.counts_by_category(project_id),
+            over_time=[TimeBucket(month=m, count=c) for m, c in self.errors.counts_over_time(project_id)],
         )
 
     @staticmethod

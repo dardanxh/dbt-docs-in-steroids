@@ -12,6 +12,7 @@ from app import domain  # noqa: F401
 from app.core.exceptions import AppError
 from app.domain.analytics.routes import router as analytics_router
 from app.domain.lineage.routes import router as lineage_router
+from app.domain.model_errors.routes import router as model_errors_router
 from app.domain.project.routes import router as project_router
 from app.settings import get_settings
 
@@ -42,6 +43,7 @@ api_v1_prefix = "/api/v1"
 app.include_router(project_router, prefix=api_v1_prefix)
 app.include_router(lineage_router, prefix=api_v1_prefix)
 app.include_router(analytics_router, prefix=api_v1_prefix)
+app.include_router(model_errors_router, prefix=api_v1_prefix)
 
 
 _STATUS_MAP = {"NOT_FOUND": 404, "BAD_REQUEST": 400, "CONFLICT": 409}

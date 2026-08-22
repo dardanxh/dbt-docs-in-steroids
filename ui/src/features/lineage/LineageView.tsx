@@ -3,7 +3,7 @@ import { Crosshair, Layers, PanelRight, Route, Scan, Search, Wand2, Waypoints, X
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSidebarSlot } from "@/features/app-shell/sidebar-slot";
-import { hotspotColor, layerColor, ownerColor, riskScore, STATUS_LEGEND } from "@/lib/colors";
+import { errorColor, hotspotColor, layerColor, ownerColor, riskScore, STATUS_LEGEND } from "@/lib/colors";
 import { useSettings, useThemeTokens } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import type { Column, ColumnLineage, MetricKey, NodeMetrics } from "@/types";
@@ -34,7 +34,13 @@ const METRICS: { key: MetricKey; label: string }[] = [
 const STATUS_COLOR_KEY = "column_lineage_status";
 const OWNER_COLOR_KEY = "git_owner";
 const RISK_COLOR_KEY = "ownership_risk";
-type ColorKey = MetricKey | typeof STATUS_COLOR_KEY | typeof OWNER_COLOR_KEY | typeof RISK_COLOR_KEY;
+const ERROR_COLOR_KEY = "error_count";
+type ColorKey =
+  | MetricKey
+  | typeof STATUS_COLOR_KEY
+  | typeof OWNER_COLOR_KEY
+  | typeof RISK_COLOR_KEY
+  | typeof ERROR_COLOR_KEY;
 
 const METRIC_KEYS = new Set<string>(METRICS.map((m) => m.key));
 const isMetricKey = (k: ColorKey): k is MetricKey => METRIC_KEYS.has(k);
@@ -82,8 +88,9 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const colorByStatus = colorBy === STATUS_COLOR_KEY;
   const colorByOwner = colorBy === OWNER_COLOR_KEY;
   const colorByRisk = colorBy === RISK_COLOR_KEY;
+  const colorByError = colorBy === ERROR_COLOR_KEY;
   // Categorical/owner/risk colorings don't use the heat scale or metric badges.
-  const isCategorical = colorByStatus || colorByOwner || colorByRisk;
+  const isCategorical = colorByStatus || colorByOwner || colorByRisk || colorByError;
   // Numeric metric backing ordering + badges; falls back to a sensible default
   // when a non-metric coloring (status/owner/risk) is active.
   const metric: MetricKey = isMetricKey(colorBy) ? colorBy : "downstream_count";
@@ -198,6 +205,15 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([owner, count]) => ({ owner, count }));
   }, [graph]);
   const ownershipTracked = owners.length > 0;
+
+  // Whether any model has uploaded errors — gates the "Errors" color mode.
+  const errorsTracked = useMemo(
+    () => !!graph && graph.nodes.some((n) => (n.metrics.error_count ?? 0) > 0),
+    [graph],
+  );
+  useEffect(() => {
+    if (!errorsTracked && colorByError) setColorBy("downstream_count");
+  }, [errorsTracked, colorByError]);
 
   // Fall back to a metric coloring if the active project doesn't track ownership.
   useEffect(() => {
@@ -441,6 +457,12 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       for (const n of graph.nodes) {
         if (n.metrics.owner) map.set(n.id, shortOwner(n.metrics.owner));
       }
+    } else if (colorByError) {
+      // Label error-heavy nodes with their error count.
+      for (const n of graph.nodes) {
+        const c = n.metrics.error_count ?? 0;
+        if (c > 0) map.set(n.id, `${c} err`);
+      }
     } else if (!isCategorical && settings.badgeMetric !== "none") {
       for (const n of graph.nodes) {
         const v = n.metrics[metric];
@@ -454,6 +476,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     usage,
     metric,
     colorByOwner,
+    colorByError,
     isCategorical,
     settings.badgeMetric,
     settings.showColumnFractions,
@@ -478,8 +501,18 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       for (const n of graph.nodes) m.set(n.id, hotspotColor(riskScore(n.metrics, maxDownstream)));
       return m;
     }
+    if (colorByError) {
+      let maxErrors = 0;
+      for (const n of graph.nodes) maxErrors = Math.max(maxErrors, n.metrics.error_count ?? 0);
+      const m = new Map<string, string>();
+      for (const n of graph.nodes) {
+        const norm = maxErrors > 0 ? (n.metrics.error_count ?? 0) / maxErrors : 0;
+        m.set(n.id, errorColor(norm));
+      }
+      return m;
+    }
     return undefined;
-  }, [graph, colorByOwner, colorByRisk]);
+  }, [graph, colorByOwner, colorByRisk, colorByError]);
 
   const layout = useMemo(() => {
     if (!graph) return { nodes: [], edges: [] };
@@ -674,6 +707,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
               ownerFilter={ownerFilter}
               onToggleOwner={toggleOwner}
               onClearOwners={() => setOwnerFilter(new Set())}
+              errorsTracked={errorsTracked}
             />,
             sidebarSlot,
           )}
@@ -1105,6 +1139,7 @@ function Toolbar({
   ownerFilter,
   onToggleOwner,
   onClearOwners,
+  errorsTracked,
 }: {
   colorBy: ColorKey;
   onColorBy: (m: ColorKey) => void;
@@ -1121,6 +1156,7 @@ function Toolbar({
   ownerFilter: Set<string>;
   onToggleOwner: (owner: string) => void;
   onClearOwners: () => void;
+  errorsTracked: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2 border-border border-t px-3 py-3 text-xs">
@@ -1141,6 +1177,7 @@ function Toolbar({
           </optgroup>
           <optgroup label="Categories">
             <option value={STATUS_COLOR_KEY}>Column lineage status</option>
+            {errorsTracked && <option value={ERROR_COLOR_KEY}>Errors (failure heat)</option>}
             {ownershipTracked && <option value={OWNER_COLOR_KEY}>Git owner</option>}
             {ownershipTracked && <option value={RISK_COLOR_KEY}>Ownership risk (bus factor)</option>}
           </optgroup>
@@ -1153,6 +1190,8 @@ function Toolbar({
           onToggleOwner={onToggleOwner}
           onClearOwners={onClearOwners}
         />
+      ) : colorBy === ERROR_COLOR_KEY ? (
+        <ErrorLegend />
       ) : (
         <Legend status={colorBy === STATUS_COLOR_KEY} />
       )}
@@ -1253,6 +1292,22 @@ function Legend({ status }: { status: boolean }) {
         ))}
       </div>
       <span className="text-muted">high</span>
+    </div>
+  );
+}
+
+// Green→red heat legend for "Color by: Errors".
+function ErrorLegend() {
+  const stops = [0, 0.25, 0.5, 0.75, 1];
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-muted">none</span>
+      <div className="flex h-3 w-32 overflow-hidden rounded">
+        {stops.map((s) => (
+          <div key={s} className="h-full flex-1" style={{ background: errorColor(s) }} />
+        ))}
+      </div>
+      <span className="text-muted">most</span>
     </div>
   );
 }

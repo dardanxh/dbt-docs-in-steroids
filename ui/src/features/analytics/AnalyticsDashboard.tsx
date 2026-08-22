@@ -1,7 +1,19 @@
-import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { layerColor, ownerColor } from "@/lib/colors";
+import {
+  Bar,
+  BarChart,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { errorCategoryColor, layerColor, ownerColor } from "@/lib/colors";
 import { useThemeTokens } from "@/lib/settings";
-import type { Analytics, OwnershipStats } from "@/types";
+import type { Analytics, ErrorAnalytics, OwnershipStats } from "@/types";
 import { useAnalytics } from "./api";
 
 const CHART_COLORS = ["#818cf8", "#38bdf8", "#f472b6", "#34d399", "#fbbf24", "#94a3b8"];
@@ -98,8 +110,97 @@ export function AnalyticsDashboard({ projectId }: { projectId: string }) {
             </Card>
           </>
         )}
+
+        {data.errors.tracked && (
+          <>
+            <Card title={`Most error-prone models · ${data.errors.total} errors`}>
+              <ErrorProne errors={data.errors} />
+            </Card>
+            <Card title="Errors by category">
+              <ErrorsByCategory errors={data.errors} tickFill={tickFill} tooltipStyle={tooltipStyle} />
+            </Card>
+            <Card title="Errors over time">
+              <ErrorsOverTime errors={data.errors} tickFill={tickFill} tooltipStyle={tooltipStyle} />
+            </Card>
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+function ErrorProne({ errors }: { errors: ErrorAnalytics }) {
+  const top = errors.most_error_prone.slice(0, 10);
+  const max = top[0]?.error_count || 1;
+  return (
+    <ul className="space-y-1.5">
+      {top.map((m) => (
+        <li key={m.node_id} className="text-xs">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: layerColor(m.layer) }} />
+            <span className="min-w-0 flex-1 truncate text-fg" title={m.node_id}>
+              {m.name}
+            </span>
+            <span className="shrink-0 font-medium text-muted">{m.error_count}</span>
+          </div>
+          <div className="mt-1 ml-[18px] h-1.5 overflow-hidden rounded bg-panel-2">
+            <div
+              className="h-full rounded"
+              style={{ width: `${(m.error_count / max) * 100}%`, background: "#ef4444" }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ErrorsByCategory({
+  errors,
+  tickFill,
+  tooltipStyle,
+}: {
+  errors: ErrorAnalytics;
+  tickFill: string;
+  tooltipStyle: Record<string, unknown>;
+}) {
+  const data = Object.entries(errors.by_category)
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count);
+  return (
+    <ResponsiveContainer width="100%" height={240}>
+      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 8, bottom: 4, left: 40 }}>
+        <XAxis type="number" tick={{ fill: tickFill, fontSize: 11 }} />
+        <YAxis type="category" dataKey="category" width={120} tick={{ fill: tickFill, fontSize: 10 }} />
+        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: tickFill, fillOpacity: 0.12 }} />
+        <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+          {data.map((d) => (
+            <Cell key={d.category} fill={errorCategoryColor(d.category)} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function ErrorsOverTime({
+  errors,
+  tickFill,
+  tooltipStyle,
+}: {
+  errors: ErrorAnalytics;
+  tickFill: string;
+  tooltipStyle: Record<string, unknown>;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={240}>
+      <LineChart data={errors.over_time} margin={{ top: 8, right: 8, bottom: 8, left: -12 }}>
+        <XAxis dataKey="month" tick={{ fill: tickFill, fontSize: 11 }} />
+        <YAxis tick={{ fill: tickFill, fontSize: 11 }} allowDecimals={false} />
+        <Tooltip contentStyle={tooltipStyle} />
+        <Line type="monotone" dataKey="count" stroke="#ef4444" strokeWidth={2} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 

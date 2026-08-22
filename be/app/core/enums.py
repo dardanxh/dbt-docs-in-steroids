@@ -53,3 +53,20 @@ class ParseStatus(StrEnum):
     OK = "ok"
     PARTIAL = "partial"
     FAILED = "failed"
+
+
+class ErrorCategory(StrEnum):
+    """Classification of a dbt operational failure, assigned by the uploading
+    agent. Kept fixed so coloring/analytics stay consistent."""
+
+    TEST_FAILURE = "test_failure"  # a dbt test assertion failed
+    COMPILATION_ERROR = "compilation_error"  # jinja/sql compile: ref/source/macro/var/syntax
+    SQL_RUNTIME_ERROR = "sql_runtime_error"  # warehouse execution error at runtime
+    FRESHNESS_ERROR = "freshness_error"  # source freshness check failed / stale source
+    UPSTREAM_FAILURE = "upstream_failure"  # skipped/failed due to an upstream model failing
+    PERMISSION_ERROR = "permission_error"  # auth / insufficient privileges / access denied
+    RESOURCE_LIMIT = "resource_limit"  # timeout, OOM, quota/slot exceeded, warehouse suspended
+    DEPENDENCY_MISSING = "dependency_missing"  # relation/column not found, schema drift
+    CONNECTION_ERROR = "connection_error"  # warehouse/network/infra connection failure
+    CONFIGURATION_ERROR = "configuration_error"  # bad config, missing target/profile, invalid materialization
+    OTHER = "other"  # uncategorized

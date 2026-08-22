@@ -2,11 +2,11 @@ import { Check, Code2, Copy, Crosshair, X } from "lucide-react";
 import { Highlight, themes } from "prism-react-renderer";
 import { type ReactNode, useState } from "react";
 import { apiGet } from "@/lib/api";
-import { isStale, layerColor, ownerColor, TRANSFORM_COLORS } from "@/lib/colors";
+import { errorCategoryColor, isStale, layerColor, ownerColor, TRANSFORM_COLORS } from "@/lib/colors";
 import { useSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
-import type { ColumnLineage, NodeDetail } from "@/types";
-import { useNodeDetail } from "./api";
+import type { ColumnLineage, ModelError, NodeDetail } from "@/types";
+import { useNodeDetail, useNodeErrors } from "./api";
 
 type Direction = "upstream" | "downstream" | "both";
 
@@ -28,6 +28,7 @@ export function NodePanel({
   isFocused: boolean;
 }) {
   const { data: node, isPending } = useNodeDetail(projectId, nodeId);
+  const { data: errors } = useNodeErrors(projectId, nodeId);
   const [activeColumn, setActiveColumn] = useState<string | null>(null);
   const [direction, setDirection] = useState<Direction>("upstream");
 
@@ -89,6 +90,7 @@ export function NodePanel({
       ) : (
         <div className="flex-1 overflow-y-auto">
           <Metrics node={node} />
+          <ErrorTimeline errors={errors ?? []} />
           <Ownership node={node} />
           {node.description && (
             <p className="border-border border-b px-4 py-3 text-muted text-xs leading-relaxed">
@@ -237,6 +239,47 @@ function relativeTime(iso: string): string {
   if (days < 30) return `${days}d ago`;
   if (days < 365) return `${Math.floor(days / 30)}mo ago`;
   return `${Math.floor(days / 365)}y ago`;
+}
+
+// Operational-error timeline: every uploaded failure for this model, newest →
+// oldest, scrollable. Each row is category + when + message. Hidden when none.
+function ErrorTimeline({ errors }: { errors: ModelError[] }) {
+  if (errors.length === 0) return null;
+  return (
+    <div className="border-border border-b px-4 py-3 text-xs">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="font-semibold text-fg">Errors</span>
+        <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] text-red-400">{errors.length}</span>
+      </div>
+      <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto pr-1">
+        {errors.map((e) => (
+          <li
+            key={e.id}
+            className="border-border/60 border-l-2 pl-2"
+            style={{ borderColor: errorCategoryColor(e.category) }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                style={{
+                  background: `${errorCategoryColor(e.category)}26`,
+                  color: errorCategoryColor(e.category),
+                }}
+              >
+                {e.category}
+              </span>
+              <span className="shrink-0 text-[10px] text-muted" title={e.occurred_at}>
+                {relativeTime(e.occurred_at)}
+              </span>
+            </div>
+            <p className="mt-1 line-clamp-3 text-[11px] text-muted leading-snug" title={e.message}>
+              {e.message}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 // Git ownership: top contributor + share, contested/solo/stale badges, and who
