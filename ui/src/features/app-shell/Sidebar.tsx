@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FolderGit2,
   GitFork,
+  Plug,
   Settings,
   ShieldCheck,
 } from "lucide-react";
@@ -12,13 +13,14 @@ import { useSettings } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import { useSidebarSlot } from "./sidebar-slot";
 
-export type View = "lineage" | "analytics" | "quality" | "projects" | "settings";
+export type View = "lineage" | "analytics" | "quality" | "projects" | "api" | "settings";
 
 const ITEMS: { view: View; label: string; icon: ReactNode }[] = [
   { view: "lineage", label: "Lineage", icon: <GitFork size={17} /> },
   { view: "analytics", label: "Analytics", icon: <BarChart3 size={17} /> },
   { view: "quality", label: "Quality", icon: <ShieldCheck size={17} /> },
   { view: "projects", label: "Projects", icon: <FolderGit2 size={17} /> },
+  { view: "api", label: "API", icon: <Plug size={17} /> },
   { view: "settings", label: "Settings", icon: <Settings size={17} /> },
 ];
 

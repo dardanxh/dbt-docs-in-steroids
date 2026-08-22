@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AnalyticsDashboard } from "@/features/analytics/AnalyticsDashboard";
+import { ApiDocsView } from "@/features/api-docs/ApiDocsView";
 import { Sidebar, type View } from "@/features/app-shell/Sidebar";
 import { SidebarSlotProvider } from "@/features/app-shell/sidebar-slot";
 import { ThemeToggle } from "@/features/app-shell/ThemeToggle";
@@ -68,7 +69,7 @@ export function App() {
       <SidebarSlotProvider>
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1">
-            {!projectId && view !== "projects" && view !== "settings" ? (
+            {!projectId && view !== "projects" && view !== "settings" && view !== "api" ? (
               <Empty onGoProjects={() => setView("projects")} />
             ) : view === "lineage" && projectId ? (
               <LineageView projectId={projectId} focusNodeId={nodeId} />
@@ -78,6 +79,8 @@ export function App() {
               <QualityView projectId={projectId} onOpenNode={openNode} />
             ) : view === "projects" ? (
               <ProjectsView activeId={projectId} onOpen={openProject} />
+            ) : view === "api" ? (
+              <ApiDocsView projectId={projectId} />
             ) : view === "settings" ? (
               <SettingsView />
             ) : (
