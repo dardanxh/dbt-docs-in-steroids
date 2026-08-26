@@ -18,6 +18,7 @@ class Layer(StrEnum):
 class ResourceType(StrEnum):
     MODEL = "model"
     SEED = "seed"
+    SNAPSHOT = "snapshot"
     SOURCE = "source"
 
 

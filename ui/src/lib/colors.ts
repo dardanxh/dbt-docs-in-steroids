@@ -91,6 +91,48 @@ export const TRANSFORM_COLORS: Record<string, string> = {
   unknown: "#94a3b8",
 };
 
+// --- Materialization ------------------------------------------------------
+
+// How each node is materialized in the warehouse. Snapshots and seeds are
+// distinct dbt resource types (not a `materialized` config), so we fold
+// resource_type + config.materialized into one category for coloring.
+export const MATERIALIZATION_COLORS: Record<string, string> = {
+  incremental: "#f59e0b", // amber — stateful, appends/merges
+  snapshot: "#a78bfa", // violet — SCD history
+  table: "#3b82f6", // blue — full rebuild
+  view: "#22d3ee", // cyan — virtual
+  materialized_view: "#f472b6", // pink
+  ephemeral: "#64748b", // slate — inlined CTE, no object
+  seed: "#34d399", // green — static CSV
+  source: "#475569", // dark slate — raw source (n/a)
+  other: "#94a3b8", // gray — unknown/unclassified
+};
+
+// Legend order (most→least "materialized"); the UI shows only categories present.
+export const MATERIALIZATION_LEGEND: Array<{ key: string; label: string; color: string }> = [
+  { key: "incremental", label: "Incremental", color: MATERIALIZATION_COLORS.incremental },
+  { key: "snapshot", label: "Snapshot", color: MATERIALIZATION_COLORS.snapshot },
+  { key: "table", label: "Table", color: MATERIALIZATION_COLORS.table },
+  { key: "view", label: "View", color: MATERIALIZATION_COLORS.view },
+  { key: "materialized_view", label: "Materialized view", color: MATERIALIZATION_COLORS.materialized_view },
+  { key: "ephemeral", label: "Ephemeral", color: MATERIALIZATION_COLORS.ephemeral },
+  { key: "seed", label: "Seed", color: MATERIALIZATION_COLORS.seed },
+  { key: "source", label: "Source", color: MATERIALIZATION_COLORS.source },
+  { key: "other", label: "Other", color: MATERIALIZATION_COLORS.other },
+];
+
+// Fold a node's resource_type + materialized into one materialization category.
+export function materializationCategory(resourceType: string, materialized: string | null): string {
+  if (resourceType === "snapshot") return "snapshot";
+  if (resourceType === "seed") return "seed";
+  if (resourceType === "source") return "source";
+  return materialized && materialized in MATERIALIZATION_COLORS ? materialized : "other";
+}
+
+export function materializationColor(resourceType: string, materialized: string | null): string {
+  return MATERIALIZATION_COLORS[materializationCategory(resourceType, materialized)];
+}
+
 // Column-lineage coverage status — shared by the node status dot, the
 // "Color by: Column lineage status" tint, and its legend.
 export const STATUS_COLORS: Record<string, string> = {

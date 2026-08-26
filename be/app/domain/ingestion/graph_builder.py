@@ -83,7 +83,7 @@ def build_graph(bundle: ArtifactBundle) -> BuiltGraph:
     # --- models + seeds ---
     for uid, node in manifest.get("nodes", {}).items():
         rtype = node.get("resource_type")
-        if rtype not in ("model", "seed"):
+        if rtype not in ("model", "seed", "snapshot"):
             continue  # skip tests, unit_tests, analyses, operations, etc.
         resource_type = ResourceType(rtype)
         config = node.get("config") or {}

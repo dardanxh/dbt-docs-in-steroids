@@ -3,7 +3,17 @@ import { Crosshair, Layers, PanelRight, Route, Scan, Search, Wand2, Waypoints, X
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSidebarSlot } from "@/features/app-shell/sidebar-slot";
-import { errorColor, hotspotColor, layerColor, ownerColor, riskScore, STATUS_LEGEND } from "@/lib/colors";
+import {
+  errorColor,
+  hotspotColor,
+  layerColor,
+  MATERIALIZATION_LEGEND,
+  materializationCategory,
+  materializationColor,
+  ownerColor,
+  riskScore,
+  STATUS_LEGEND,
+} from "@/lib/colors";
 import { useSettings, useThemeTokens } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 import type { Column, ColumnLineage, MetricKey, NodeMetrics } from "@/types";
@@ -35,12 +45,14 @@ const STATUS_COLOR_KEY = "column_lineage_status";
 const OWNER_COLOR_KEY = "git_owner";
 const RISK_COLOR_KEY = "ownership_risk";
 const ERROR_COLOR_KEY = "error_count";
+const MATERIALIZATION_COLOR_KEY = "materialization";
 type ColorKey =
   | MetricKey
   | typeof STATUS_COLOR_KEY
   | typeof OWNER_COLOR_KEY
   | typeof RISK_COLOR_KEY
-  | typeof ERROR_COLOR_KEY;
+  | typeof ERROR_COLOR_KEY
+  | typeof MATERIALIZATION_COLOR_KEY;
 
 const METRIC_KEYS = new Set<string>(METRICS.map((m) => m.key));
 const isMetricKey = (k: ColorKey): k is MetricKey => METRIC_KEYS.has(k);
@@ -89,8 +101,10 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const colorByOwner = colorBy === OWNER_COLOR_KEY;
   const colorByRisk = colorBy === RISK_COLOR_KEY;
   const colorByError = colorBy === ERROR_COLOR_KEY;
+  const colorByMaterialization = colorBy === MATERIALIZATION_COLOR_KEY;
   // Categorical/owner/risk colorings don't use the heat scale or metric badges.
-  const isCategorical = colorByStatus || colorByOwner || colorByRisk || colorByError;
+  const isCategorical =
+    colorByStatus || colorByOwner || colorByRisk || colorByError || colorByMaterialization;
   // Numeric metric backing ordering + badges; falls back to a sensible default
   // when a non-metric coloring (status/owner/risk) is active.
   const metric: MetricKey = isMetricKey(colorBy) ? colorBy : "downstream_count";
@@ -205,6 +219,14 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([owner, count]) => ({ owner, count }));
   }, [graph]);
   const ownershipTracked = owners.length > 0;
+
+  // Materialization categories present in this graph (in legend order) — for the
+  // "Color by: Materialization" legend.
+  const materializations = useMemo(() => {
+    if (!graph) return [];
+    const present = new Set(graph.nodes.map((n) => materializationCategory(n.resource_type, n.materialized)));
+    return MATERIALIZATION_LEGEND.filter((m) => present.has(m.key));
+  }, [graph]);
 
   // Whether any model has uploaded errors — gates the "Errors" color mode.
   const errorsTracked = useMemo(
@@ -463,6 +485,9 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
         const c = n.metrics.error_count ?? 0;
         if (c > 0) map.set(n.id, `${c} err`);
       }
+    } else if (colorByMaterialization) {
+      // Label each node with its materialization category.
+      for (const n of graph.nodes) map.set(n.id, materializationCategory(n.resource_type, n.materialized));
     } else if (!isCategorical && settings.badgeMetric !== "none") {
       for (const n of graph.nodes) {
         const v = n.metrics[metric];
@@ -477,6 +502,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     metric,
     colorByOwner,
     colorByError,
+    colorByMaterialization,
     isCategorical,
     settings.badgeMetric,
     settings.showColumnFractions,
@@ -511,8 +537,13 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       }
       return m;
     }
+    if (colorByMaterialization) {
+      const m = new Map<string, string>();
+      for (const n of graph.nodes) m.set(n.id, materializationColor(n.resource_type, n.materialized));
+      return m;
+    }
     return undefined;
-  }, [graph, colorByOwner, colorByRisk, colorByError]);
+  }, [graph, colorByOwner, colorByRisk, colorByError, colorByMaterialization]);
 
   const layout = useMemo(() => {
     if (!graph) return { nodes: [], edges: [] };
@@ -708,6 +739,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
               onToggleOwner={toggleOwner}
               onClearOwners={() => setOwnerFilter(new Set())}
               errorsTracked={errorsTracked}
+              materializations={materializations}
             />,
             sidebarSlot,
           )}
@@ -1140,6 +1172,7 @@ function Toolbar({
   onToggleOwner,
   onClearOwners,
   errorsTracked,
+  materializations,
 }: {
   colorBy: ColorKey;
   onColorBy: (m: ColorKey) => void;
@@ -1157,6 +1190,7 @@ function Toolbar({
   onToggleOwner: (owner: string) => void;
   onClearOwners: () => void;
   errorsTracked: boolean;
+  materializations: { key: string; label: string; color: string }[];
 }) {
   return (
     <div className="flex flex-col gap-2 border-border border-t px-3 py-3 text-xs">
@@ -1177,6 +1211,7 @@ function Toolbar({
           </optgroup>
           <optgroup label="Categories">
             <option value={STATUS_COLOR_KEY}>Column lineage status</option>
+            <option value={MATERIALIZATION_COLOR_KEY}>Materialization</option>
             {errorsTracked && <option value={ERROR_COLOR_KEY}>Errors (failure heat)</option>}
             {ownershipTracked && <option value={OWNER_COLOR_KEY}>Git owner</option>}
             {ownershipTracked && <option value={RISK_COLOR_KEY}>Ownership risk (bus factor)</option>}
@@ -1192,6 +1227,8 @@ function Toolbar({
         />
       ) : colorBy === ERROR_COLOR_KEY ? (
         <ErrorLegend />
+      ) : colorBy === MATERIALIZATION_COLOR_KEY ? (
+        <SwatchLegend items={materializations} />
       ) : (
         <Legend status={colorBy === STATUS_COLOR_KEY} />
       )}
@@ -1292,6 +1329,21 @@ function Legend({ status }: { status: boolean }) {
         ))}
       </div>
       <span className="text-muted">high</span>
+    </div>
+  );
+}
+
+// Discrete swatch legend (label + color per row) — used by "Color by:
+// Materialization". Shows only the categories present in the graph.
+function SwatchLegend({ items }: { items: { key: string; label: string; color: string }[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {items.map((s) => (
+        <span key={s.key} className="flex items-center gap-1 text-muted">
+          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} />
+          {s.label}
+        </span>
+      ))}
     </div>
   );
 }
