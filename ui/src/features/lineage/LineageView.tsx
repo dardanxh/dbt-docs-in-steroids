@@ -1,5 +1,5 @@
 import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode } from "@xyflow/react";
-import { Crosshair, Layers, PanelRight, Route, Scan, Search, Wand2, Waypoints, X } from "lucide-react";
+import { Crosshair, Layers, PanelRight, Route, Scan, Search, Text, Wand2, Waypoints, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSidebarSlot } from "@/features/app-shell/sidebar-slot";
@@ -143,6 +143,8 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   // crossings; `flatten` ignores semantic layers and columns by dependency depth.
   const [tidy, setTidy] = useState(false);
   const [flatten, setFlatten] = useState(false);
+  // Grow nodes to fit their full name (no truncation); re-spaces columns.
+  const [fullNames, setFullNames] = useState(false);
   const [search, setSearch] = useState("");
   const [testFilter, setTestFilter] = useState<"all" | "untested" | "tested">("all");
   // Filter-by-owner: union of the selected actors' models is highlighted (like
@@ -559,6 +561,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       flatten,
       colorByStatus,
       tintOverride,
+      fullNames,
       connect: !!relationship,
     });
   }, [
@@ -574,6 +577,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     flatten,
     colorByStatus,
     tintOverride,
+    fullNames,
     relationship,
   ]);
 
@@ -733,6 +737,8 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
               onTidy={() => setTidy((v) => !v)}
               flatten={flatten}
               onFlatten={() => setFlatten((v) => !v)}
+              fullNames={fullNames}
+              onFullNames={() => setFullNames((v) => !v)}
               owners={owners}
               ownershipTracked={ownershipTracked}
               ownerFilter={ownerFilter}
@@ -1166,6 +1172,8 @@ function Toolbar({
   onTidy,
   flatten,
   onFlatten,
+  fullNames,
+  onFullNames,
   owners,
   ownershipTracked,
   ownerFilter,
@@ -1184,6 +1192,8 @@ function Toolbar({
   onTidy: () => void;
   flatten: boolean;
   onFlatten: () => void;
+  fullNames: boolean;
+  onFullNames: () => void;
   owners: { owner: string; count: number }[];
   ownershipTracked: boolean;
   ownerFilter: Set<string>;
@@ -1232,45 +1242,59 @@ function Toolbar({
       ) : (
         <Legend status={colorBy === STATUS_COLOR_KEY} />
       )}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         <span className="text-muted">Layout</span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-1">
           <ToggleButton
             active={tidy}
             onClick={onTidy}
             title="Reorder nodes within each column to reduce edge crossings"
           >
-            <Wand2 size={12} /> Untangle
+            <Wand2 size={13} /> Untangle
           </ToggleButton>
           <ToggleButton
             active={flatten}
             onClick={onFlatten}
             title="Ignore SOURCE/DWH/DATAMART layers; lay out columns by dependency depth"
           >
-            <Layers size={12} /> Skip layers
+            <Layers size={13} /> Skip layers
+          </ToggleButton>
+          <ToggleButton
+            active={fullNames}
+            onClick={onFullNames}
+            title="Grow each node to show its full name instead of truncating"
+          >
+            <Text size={13} /> Full names
           </ToggleButton>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onCollapseAll}
-          disabled={flatten}
-          className="rounded border border-border px-2 py-1 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
-        >
-          Collapse all
-        </button>
-        <button
-          type="button"
-          onClick={onExpandAll}
-          disabled={flatten}
-          className="rounded border border-border px-2 py-1 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
-        >
-          Expand all
-        </button>
-        {!flatten && collapsedCount > 0 && <span className="text-muted">{collapsedCount} collapsed</span>}
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-muted">Collapse</span>
+        <div className="grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            onClick={onCollapseAll}
+            disabled={flatten}
+            className="whitespace-nowrap rounded border border-border px-2 py-1.5 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
+          >
+            Collapse all
+          </button>
+          <button
+            type="button"
+            onClick={onExpandAll}
+            disabled={flatten}
+            className="whitespace-nowrap rounded border border-border px-2 py-1.5 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
+          >
+            Expand all
+          </button>
+        </div>
+        {!flatten && collapsedCount > 0 && (
+          <span className="text-[11px] text-muted">{collapsedCount} layers collapsed</span>
+        )}
       </div>
-      <div className="text-[11px] text-muted">
+
+      <div className="border-border border-t pt-2 text-[11px] text-muted leading-relaxed">
         Column lineage: <span className="text-emerald-400">{coverage.column_lineage_ok ?? 0} ok</span> ·{" "}
         <span className="text-amber-400">{coverage.column_lineage_partial ?? 0} partial</span> ·{" "}
         {coverage.column_lineage_failed ?? 0} none / {coverage.models ?? 0} models
@@ -1297,7 +1321,7 @@ function ToggleButton({
       title={title}
       aria-pressed={active}
       className={cn(
-        "flex items-center gap-1 rounded border px-2 py-1",
+        "flex w-full items-center gap-2 whitespace-nowrap rounded border px-2.5 py-1.5 text-left",
         active ? "border-accent bg-accent/15 text-fg" : "border-border text-muted hover:text-fg",
       )}
     >

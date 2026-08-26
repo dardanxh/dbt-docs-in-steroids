@@ -14,12 +14,15 @@ export function ModelNode({ data, selected }: NodeProps) {
     highlighted: boolean;
     connected: boolean;
     badge?: string;
+    fullName?: boolean;
   };
   const accent = layerColor(d.layer);
   return (
     <div
       style={{
-        width: NODE_WIDTH,
+        // Full-names mode grows the node to its content; otherwise fixed width + truncate.
+        width: d.fullName ? "max-content" : NODE_WIDTH,
+        maxWidth: d.fullName ? 620 : undefined,
         borderLeftColor: accent,
         background: `color-mix(in srgb, ${d.tint} 22%, var(--color-panel))`,
       }}
@@ -40,7 +43,10 @@ export function ModelNode({ data, selected }: NodeProps) {
           🌱
         </span>
       ) : null}
-      <span className="min-w-0 flex-1 truncate font-medium text-fg" title={d.label}>
+      <span
+        className={cn("font-medium text-fg", d.fullName ? "whitespace-nowrap" : "min-w-0 flex-1 truncate")}
+        title={d.label}
+      >
         {d.label}
       </span>
       {d.badge && (

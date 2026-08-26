@@ -17,6 +17,33 @@ export const ROW_HEIGHT = 46;
 const HEADER_Y = 0;
 const FIRST_ROW_Y = 70;
 const TIDY_SWEEPS = 6;
+const COLUMN_GAP = COLUMN_WIDTH - NODE_WIDTH; // horizontal breathing room between columns
+const NODE_MAX_WIDTH = 620; // cap so one very long name can't blow the layout out
+
+// Measure a node label's rendered width (px) so "Full names" mode can size nodes
+// to their content and space columns without overlap. Uses a cached canvas
+// context; falls back to a rough per-char estimate when there's no DOM (tests).
+let _measureCtx: CanvasRenderingContext2D | null = null;
+function measureLabel(text: string): number {
+  if (typeof document === "undefined") return text.length * 7;
+  if (!_measureCtx) {
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (ctx) ctx.font = "500 12px ui-sans-serif, system-ui, -apple-system, sans-serif";
+    _measureCtx = ctx;
+  }
+  return _measureCtx ? _measureCtx.measureText(text).width : text.length * 7;
+}
+
+// Estimate the on-screen width of a model node from its label + trimmings
+// (icon, badge, status dot, padding). Generous by design — the node itself is
+// sized to `max-content`, so this only governs column spacing (over-estimating
+// just adds a little slack, under-estimating would overlap).
+function estimateNodeWidth(name: string, resourceType: string, badge?: string): number {
+  const extras = 20 /* px-2.5 ×2 */ + 5 /* borders */ + 8 /* gaps */ + 16 /* status dot */ + 24; /* buffer */
+  const icon = resourceType === "source" || resourceType === "seed" ? 22 : 0;
+  const badgeW = badge ? 10 + badge.length * 6.5 : 0;
+  return Math.min(NODE_MAX_WIDTH, Math.ceil(measureLabel(name) + extras + icon + badgeW));
+}
 
 export interface ModelNodeData {
   label: string;
@@ -28,6 +55,7 @@ export interface ModelNodeData {
   highlighted: boolean;
   connected: boolean; // on the green relationship path (relationship mode)
   badge?: string; // right-aligned chip (LOC / used·total column fraction / etc.)
+  fullName?: boolean; // size node to its full label instead of truncating
   [key: string]: unknown;
 }
 
@@ -57,6 +85,7 @@ export interface LayoutOptions {
   flatten?: boolean; // ignore semantic layers; columns = dependency depth
   colorByStatus?: boolean; // tint by column-lineage status instead of the metric heat scale
   tintOverride?: Map<string, string>; // node id -> fill color (owner / risk modes); wins over metric/status
+  fullNames?: boolean; // size nodes to their full label (no truncation); re-space columns to fit
   connect?: boolean; // relationship mode: paint the highlighted path/edges green
 }
 
@@ -121,10 +150,31 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
   // ---- Reduce crossings (barycenter sweeps) --------------------------------
   if (opts.tidy) tidyColumns(columns, slotEdges);
 
+  // ---- Column x-positions --------------------------------------------------
+  // Fixed grid normally; in "Full names" mode each column is as wide as its
+  // widest node (measured from the label) so nodes can grow without overlapping.
+  const columnX: number[] = [];
+  {
+    let acc = 0;
+    for (const col of columns) {
+      columnX.push(acc);
+      if (!opts.fullNames || col.collapsed) {
+        acc += COLUMN_WIDTH;
+      } else {
+        let maxW = NODE_WIDTH;
+        for (const id of col.nodeIds) {
+          const n = nodeById.get(id);
+          if (n) maxW = Math.max(maxW, estimateNodeWidth(n.name, n.resource_type, opts.badges?.get(n.id)));
+        }
+        acc += maxW + COLUMN_GAP;
+      }
+    }
+  }
+
   // ---- Emit React Flow nodes ----------------------------------------------
   const rfNodes: RFNode[] = [];
   columns.forEach((col, colIndex) => {
-    const x = colIndex * COLUMN_WIDTH;
+    const x = columnX[colIndex];
     rfNodes.push({
       id: `header:${col.name}`,
       type: "header",
@@ -179,6 +229,7 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
           highlighted,
           connected: !!opts.connect && highlighted,
           badge: opts.badges?.get(n.id),
+          fullName: !!opts.fullNames,
         } satisfies ModelNodeData,
         draggable: false,
       });
