@@ -7,6 +7,7 @@ import {
   ArrowUp,
   BookOpen,
   CalendarClock,
+  CircleOff,
   Columns3,
   Crosshair,
   Database,
@@ -237,8 +238,12 @@ const OWNER_COLOR_KEY = "git_owner";
 const RISK_COLOR_KEY = "ownership_risk";
 const ERROR_COLOR_KEY = "error_count";
 const MATERIALIZATION_COLOR_KEY = "materialization";
+// No coloring: every card gets the same neutral tint (the default).
+const NONE_COLOR_KEY = "none";
+const NEUTRAL_TINT = "var(--color-muted)";
 type ColorKey =
   | MetricKey
+  | typeof NONE_COLOR_KEY
   | typeof STATUS_COLOR_KEY
   | typeof OWNER_COLOR_KEY
   | typeof RISK_COLOR_KEY
@@ -288,15 +293,16 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const { settings } = useSettings();
   const { target: sidebarSlot } = useSidebarSlot();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [colorBy, setColorBy] = useState<ColorKey>("downstream_count");
+  const [colorBy, setColorBy] = useState<ColorKey>(NONE_COLOR_KEY);
   const colorByStatus = colorBy === STATUS_COLOR_KEY;
   const colorByOwner = colorBy === OWNER_COLOR_KEY;
   const colorByRisk = colorBy === RISK_COLOR_KEY;
   const colorByError = colorBy === ERROR_COLOR_KEY;
   const colorByMaterialization = colorBy === MATERIALIZATION_COLOR_KEY;
   // Categorical/owner/risk colorings don't use the heat scale or metric badges.
+  const colorByNone = colorBy === NONE_COLOR_KEY;
   const isCategorical =
-    colorByStatus || colorByOwner || colorByRisk || colorByError || colorByMaterialization;
+    colorByNone || colorByStatus || colorByOwner || colorByRisk || colorByError || colorByMaterialization;
   // Numeric metric backing ordering + badges; falls back to a sensible default
   // when a non-metric coloring (status/owner/risk) is active.
   const metric: MetricKey = isMetricKey(colorBy) ? colorBy : "downstream_count";
@@ -436,12 +442,12 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     [graph],
   );
   useEffect(() => {
-    if (!errorsTracked && colorByError) setColorBy("downstream_count");
+    if (!errorsTracked && colorByError) setColorBy(NONE_COLOR_KEY);
   }, [errorsTracked, colorByError]);
 
   // Fall back to a metric coloring if the active project doesn't track ownership.
   useEffect(() => {
-    if (!ownershipTracked && (colorByOwner || colorByRisk)) setColorBy("downstream_count");
+    if (!ownershipTracked && (colorByOwner || colorByRisk)) setColorBy(NONE_COLOR_KEY);
   }, [ownershipTracked, colorByOwner, colorByRisk]);
 
   const toggleOwner = useCallback((owner: string) => {
@@ -750,6 +756,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   // metric heat scale in the layout (see layout.ts tintOverride).
   const tintOverride = useMemo(() => {
     if (!graph) return undefined;
+    if (colorByNone) return new Map(graph.nodes.map((n) => [n.id, NEUTRAL_TINT]));
     if (colorByOwner) {
       const m = new Map<string, string>();
       for (const n of graph.nodes) m.set(n.id, ownerColor(n.metrics.owner));
@@ -778,7 +785,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       return m;
     }
     return undefined;
-  }, [graph, colorByOwner, colorByRisk, colorByError, colorByMaterialization]);
+  }, [graph, colorByNone, colorByOwner, colorByRisk, colorByError, colorByMaterialization]);
 
   // Endpoint candidates for the relationship card, alphabetical.
   const pickableModels = useMemo(
@@ -1054,7 +1061,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
             onClear={() => setRelEndpoints({ a: null, b: null })}
             onClose={toggleRelMode}
           />
-        ) : (
+        ) : colorByNone ? null : (
           <GraphLegend
             colorBy={colorBy}
             owners={owners}
@@ -1627,12 +1634,20 @@ function Toolbar({
   layerMode: boolean;
   onToggleLayerMode: () => void;
 }) {
-  const metricOptions: ColorOption<ColorKey>[] = [...METRICS]
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .map((m) => {
-      const Icon = METRIC_ICONS[m.key];
-      return { ...m, icon: <Icon size={15} /> };
-    });
+  const metricOptions: ColorOption<ColorKey>[] = [
+    {
+      key: NONE_COLOR_KEY,
+      label: "None",
+      icon: <CircleOff size={15} />,
+      description: "No coloring: every model card looks the same.",
+    },
+    ...[...METRICS]
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map((m) => {
+        const Icon = METRIC_ICONS[m.key];
+        return { ...m, icon: <Icon size={15} /> };
+      }),
+  ];
   const categoryOptions: ColorOption<ColorKey>[] = [
     {
       key: STATUS_COLOR_KEY,

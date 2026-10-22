@@ -28,9 +28,11 @@ export function ProjectBar({
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-select the first ready project once loaded.
+  // Auto-select the first project once loaded — also when the URL points at a
+  // project that no longer exists (deleted / re-registered under a new id).
   useEffect(() => {
-    if (!selectedId && projects && projects.length > 0) onSelect(projects[0].id);
+    if (!projects || projects.length === 0) return;
+    if (!selectedId || !projects.some((p) => p.id === selectedId)) onSelect(projects[0].id);
   }, [projects, selectedId, onSelect]);
 
   const selected = projects?.find((p) => p.id === selectedId) ?? null;
