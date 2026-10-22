@@ -1,5 +1,22 @@
 import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode } from "@xyflow/react";
-import { Crosshair, Layers, PanelRight, Route, Scan, Search, Text, Wand2, Waypoints, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  Crosshair,
+  GripVertical,
+  Layers,
+  PanelRight,
+  RotateCcw,
+  Route,
+  Scan,
+  Search,
+  Text,
+  Wand2,
+  Waypoints,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSidebarSlot } from "@/features/app-shell/sidebar-slot";
@@ -23,6 +40,34 @@ import { NodePanel } from "./NodePanel";
 import { CollapsedNode, HeaderNode, ModelNode } from "./nodes";
 
 const NODE_TYPES = { model: ModelNode, header: HeaderNode, collapsed: CollapsedNode };
+
+// Custom layer order is saved per project in localStorage. On load it's
+// reconciled against the graph's current layers: layers that no longer exist
+// are dropped, new ones are appended in their default order.
+const layerOrderKey = (projectId: string) => `dbtsteroids-layer-order:${projectId}`;
+
+function loadLayerOrder(projectId: string, defaults: string[]): string[] {
+  try {
+    const raw = localStorage.getItem(layerOrderKey(projectId));
+    const saved: unknown = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(saved)) return defaults;
+    const known = new Set(defaults);
+    const kept = saved.filter((n): n is string => typeof n === "string" && known.has(n));
+    const keptSet = new Set(kept);
+    return [...kept, ...defaults.filter((n) => !keptSet.has(n))];
+  } catch {
+    return defaults;
+  }
+}
+
+function saveLayerOrder(projectId: string, order: string[] | null) {
+  try {
+    if (order) localStorage.setItem(layerOrderKey(projectId), JSON.stringify(order));
+    else localStorage.removeItem(layerOrderKey(projectId));
+  } catch {
+    /* ignore quota/private-mode errors */
+  }
+}
 
 const METRICS: { key: MetricKey; label: string }[] = [
   { key: "downstream_count", label: "Downstream users (hotspots)" },
@@ -167,7 +212,12 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     if (graph && initializedFor.current !== projectId) {
       initializedFor.current = projectId;
       setCollapsed(new Set(graph.layers.filter((l) => l.node_ids.length > 50).map((l) => l.name)));
-      setLayerOrder(graph.layers.map((l) => l.name));
+      setLayerOrder(
+        loadLayerOrder(
+          projectId,
+          graph.layers.map((l) => l.name),
+        ),
+      );
       setTabs([ALL_TAB]);
       setActiveKey("all");
     }
@@ -583,17 +633,21 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
 
   const reorderLayers = useCallback(
     (from: number, to: number) => {
-      setLayerOrder((prev) => {
-        const base = prev ?? graph?.layers.map((l) => l.name) ?? [];
-        if (from < 0 || from >= base.length || to < 0 || to >= base.length) return base;
-        const next = [...base];
-        const [moved] = next.splice(from, 1);
-        next.splice(to, 0, moved);
-        return next;
-      });
+      const base = layerOrder ?? graph?.layers.map((l) => l.name) ?? [];
+      if (from < 0 || from >= base.length || to < 0 || to >= base.length) return;
+      const next = [...base];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      setLayerOrder(next);
+      saveLayerOrder(projectId, next);
     },
-    [graph],
+    [graph, layerOrder, projectId],
   );
+
+  const resetLayerOrder = useCallback(() => {
+    setLayerOrder(graph?.layers.map((l) => l.name) ?? null);
+    saveLayerOrder(projectId, null);
+  }, [graph, projectId]);
 
   const toggleLayer = useCallback((layer: string) => {
     setCollapsed((prev) => {
@@ -739,6 +793,12 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
               onFlatten={() => setFlatten((v) => !v)}
               fullNames={fullNames}
               onFullNames={() => setFullNames((v) => !v)}
+              layerOrder={layerOrder ?? graph.layers.map((l) => l.name)}
+              onReorderLayers={reorderLayers}
+              onResetLayerOrder={resetLayerOrder}
+              canResetLayerOrder={
+                !!layerOrder && layerOrder.join() !== graph.layers.map((l) => l.name).join()
+              }
               owners={owners}
               ownershipTracked={ownershipTracked}
               ownerFilter={ownerFilter}
@@ -749,17 +809,6 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
             />,
             sidebarSlot,
           )}
-
-        {/* Manual column order only applies to semantic layers, not flattened
-            depth stages. */}
-        {!flatten && (
-          <LayerOrderBar
-            order={layerOrder ?? graph.layers.map((l) => l.name)}
-            onReorder={reorderLayers}
-            onReset={() => setLayerOrder(graph.layers.map((l) => l.name))}
-            canReset={!!layerOrder && layerOrder.join() !== graph.layers.map((l) => l.name).join()}
-          />
-        )}
 
         <div className="-translate-x-1/2 absolute top-4 left-1/2 z-10 flex flex-col items-center gap-2">
           <SearchBar
@@ -1174,6 +1223,10 @@ function Toolbar({
   onFlatten,
   fullNames,
   onFullNames,
+  layerOrder,
+  onReorderLayers,
+  onResetLayerOrder,
+  canResetLayerOrder,
   owners,
   ownershipTracked,
   ownerFilter,
@@ -1194,6 +1247,10 @@ function Toolbar({
   onFlatten: () => void;
   fullNames: boolean;
   onFullNames: () => void;
+  layerOrder: string[];
+  onReorderLayers: (from: number, to: number) => void;
+  onResetLayerOrder: () => void;
+  canResetLayerOrder: boolean;
   owners: { owner: string; count: number }[];
   ownershipTracked: boolean;
   ownerFilter: Set<string>;
@@ -1253,12 +1310,26 @@ function Toolbar({
             <Wand2 size={13} /> Untangle
           </ToggleButton>
           <ToggleButton
-            active={flatten}
+            active={!flatten}
             onClick={onFlatten}
-            title="Ignore SOURCE/DWH/DATAMART layers; lay out columns by dependency depth"
+            title={
+              flatten
+                ? "Layers are off: columns follow dependency depth. Click to lay out by layer"
+                : "Layers are on: one column per layer. Click to lay out by dependency depth instead"
+            }
           >
-            <Layers size={13} /> Skip layers
+            <Layers size={13} /> {flatten ? "Layers off" : "Layers on"}
           </ToggleButton>
+          {/* Manual column order only applies to semantic layers, not flattened
+              depth stages. */}
+          {!flatten && (
+            <LayerOrderList
+              order={layerOrder}
+              onReorder={onReorderLayers}
+              onReset={onResetLayerOrder}
+              canReset={canResetLayerOrder}
+            />
+          )}
           <ToggleButton
             active={fullNames}
             onClick={onFullNames}
@@ -1440,7 +1511,9 @@ function OwnerLegend({
   );
 }
 
-function LayerOrderBar({
+// Vertical, collapsible layer-order editor under the "Layers on" toggle. Top of
+// the list = leftmost column; drag a row or use the arrows to move it.
+function LayerOrderList({
   order,
   onReorder,
   onReset,
@@ -1451,49 +1524,87 @@ function LayerOrderBar({
   onReset: () => void;
   canReset: boolean;
 }) {
+  const [open, setOpen] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   return (
-    <div className="-translate-x-1/2 absolute bottom-4 left-1/2 z-10 flex items-center gap-2 rounded-lg border border-border bg-panel/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
-      <span className="text-muted">Layer order</span>
-      <span className="text-[10px] text-muted/60">(drag to reorder)</span>
-      <div className="flex items-center gap-1">
-        {order.map((name, i) => (
+    <div className="flex flex-col gap-1 rounded border border-border px-2 py-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 text-left text-muted hover:text-fg"
+      >
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <span className="flex-1">Layer order</span>
+        {canReset && <span className="text-[10px] text-accent">custom</span>}
+      </button>
+      {open && (
+        <>
+          <span className="text-[10px] text-muted/70">Top = leftmost column. Drag or use arrows.</span>
+          <ul className="flex flex-col gap-0.5">
+            {order.map((name, i) => (
+              <li
+                key={name}
+                draggable
+                onDragStart={() => setDragIndex(i)}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setOverIndex(i);
+                }}
+                onDrop={() => {
+                  if (dragIndex !== null && dragIndex !== i) onReorder(dragIndex, i);
+                  setDragIndex(null);
+                  setOverIndex(null);
+                }}
+                onDragEnd={() => {
+                  setDragIndex(null);
+                  setOverIndex(null);
+                }}
+                className={cn(
+                  "flex cursor-grab items-center gap-1.5 rounded border px-1.5 py-1 active:cursor-grabbing",
+                  overIndex === i && dragIndex !== null && dragIndex !== i
+                    ? "border-accent bg-panel-2"
+                    : "border-transparent hover:bg-panel-2",
+                  dragIndex === i && "opacity-40",
+                )}
+              >
+                <GripVertical size={12} className="shrink-0 text-muted" />
+                <span className="w-4 shrink-0 text-right text-[10px] text-muted tabular-nums">{i + 1}</span>
+                <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: layerColor(name) }} />
+                <span className="min-w-0 flex-1 truncate text-fg" title={name}>
+                  {name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onReorder(i, i - 1)}
+                  disabled={i === 0}
+                  title="Move up (left)"
+                  className="text-muted hover:text-fg disabled:opacity-30 disabled:hover:text-muted"
+                >
+                  <ArrowUp size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onReorder(i, i + 1)}
+                  disabled={i === order.length - 1}
+                  title="Move down (right)"
+                  className="text-muted hover:text-fg disabled:opacity-30 disabled:hover:text-muted"
+                >
+                  <ArrowDown size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
           <button
-            key={name}
             type="button"
-            draggable
-            onDragStart={() => setDragIndex(i)}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOverIndex(i);
-            }}
-            onDrop={() => {
-              if (dragIndex !== null && dragIndex !== i) onReorder(dragIndex, i);
-              setDragIndex(null);
-              setOverIndex(null);
-            }}
-            onDragEnd={() => {
-              setDragIndex(null);
-              setOverIndex(null);
-            }}
-            className={cn(
-              "flex cursor-grab items-center gap-1.5 rounded border px-2 py-1 active:cursor-grabbing",
-              overIndex === i && dragIndex !== null && dragIndex !== i
-                ? "border-accent bg-panel-2"
-                : "border-border",
-              dragIndex === i && "opacity-40",
-            )}
+            onClick={onReset}
+            disabled={!canReset}
+            className="mt-1 flex items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
           >
-            <span className="h-2 w-2 rounded-sm" style={{ background: layerColor(name) }} />
-            <span className="text-fg">{name}</span>
+            <RotateCcw size={12} /> Default order
           </button>
-        ))}
-      </div>
-      {canReset && (
-        <button type="button" onClick={onReset} className="ml-1 text-muted underline">
-          reset
-        </button>
+        </>
       )}
     </div>
   );
