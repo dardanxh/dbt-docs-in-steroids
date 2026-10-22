@@ -18,6 +18,9 @@ import type { GraphNode, MetricKey } from "@/types";
 
 const QUALITIES: { key: MetricKey; label: string }[] = [
   { key: "commit_count", label: "Commit count (churn)" },
+  { key: "days_since_change", label: "Days since last change" },
+  { key: "doc_coverage", label: "Documentation coverage" },
+  { key: "unused_column_count", label: "Unused columns" },
   { key: "complexity", label: "SQL complexity" },
   { key: "loc", label: "Lines of code" },
   { key: "test_count", label: "Test count" },

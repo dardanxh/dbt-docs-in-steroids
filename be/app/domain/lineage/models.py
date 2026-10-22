@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import TIMESTAMP, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import TIMESTAMP, Boolean, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -54,6 +54,9 @@ class Node(Base):
     test_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     commit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # git churn
+    doc_coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)  # 0..1
+    unused_column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unused_columns_known: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     column_lineage_status: Mapped[str | None] = mapped_column(String(20), nullable=True)  # ok | partial | failed
 

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.core.enums import Confidence, Layer
 from app.core.exceptions import NotFoundError
+from app.domain.lineage import redundancy
 from app.domain.lineage.models import ColumnEdge, Node
 from app.domain.lineage.repositories import LineageReadRepository
 from app.domain.lineage.schemas import (
@@ -25,6 +27,9 @@ from app.domain.lineage.schemas import (
     MetricValueOut,
     NodeDetailOut,
     NodeMetricsOut,
+    NodeRefOut,
+    RedundancyPairOut,
+    RedundancyResponse,
 )
 from app.domain.model_errors.repositories import ModelErrorsRepository
 
@@ -55,7 +60,18 @@ _METRIC_FIELDS = {
     "test_count",
     "column_count",
     "commit_count",
+    "doc_coverage",
+    "unused_column_count",
 }
+
+
+def _days_since(when: datetime | None) -> int:
+    """Whole days since ``when`` (a git commit time); 0 when unknown."""
+    if when is None:
+        return 0
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return max(0, (datetime.now(UTC) - when).days)
 
 
 class LineageService:
@@ -79,6 +95,10 @@ class LineageService:
             test_count=node.test_count,
             column_count=node.column_count,
             commit_count=node.commit_count,
+            doc_coverage=node.doc_coverage,
+            unused_column_count=node.unused_column_count,
+            unused_columns_known=node.unused_columns_known,
+            days_since_change=_days_since(node.last_modified_at),
             owner=node.owner,
             owner_share=node.owner_share,
             contributor_count=node.contributor_count,
@@ -239,6 +259,51 @@ class LineageService:
         values = {n.unique_id: float(getattr(n, metric)) for n in nodes}
         hi = max(values.values(), default=0.0)
         return [MetricValueOut(node_id=uid, value=v, normalized=(v / hi if hi else 0.0)) for uid, v in values.items()]
+
+    def redundancy(self, project_id: str, min_score: float, limit: int) -> RedundancyResponse:
+        """Model pairs that look redundant (see ``redundancy.py`` for the scoring)."""
+        nodes = [n for n in self.repo.nodes(project_id) if n.resource_type == "model"]
+        if not nodes:
+            raise NotFoundError(f"No ingested graph for project {project_id}")
+        parents: dict[str, set[str]] = defaultdict(set)
+        for e in self.repo.edges(project_id):
+            parents[e.dst_id].add(e.src_id)
+        columns: dict[str, set[str]] = defaultdict(set)
+        for c in self.repo.all_columns(project_id):
+            columns[c.node_unique_id].add(c.name.lower())
+        inputs = [
+            redundancy.ModelInput(
+                id=n.unique_id,
+                parents=frozenset(parents[n.unique_id]),
+                columns=frozenset(columns[n.unique_id]),
+                sql=n.raw_code,
+            )
+            for n in nodes
+        ]
+        by_id = {n.unique_id: n for n in nodes}
+
+        def ref(uid: str) -> NodeRefOut:
+            n = by_id[uid]
+            return NodeRefOut(id=uid, name=n.name, layer=n.layer)
+
+        pairs = redundancy.find_redundant(inputs, min_score=min_score, limit=limit)
+        return RedundancyResponse(
+            weights=redundancy.WEIGHTS,
+            pairs=[
+                RedundancyPairOut(
+                    a=ref(p.a),
+                    b=ref(p.b),
+                    score=p.score,
+                    input_overlap=p.input_overlap,
+                    column_overlap=p.column_overlap,
+                    sql_similarity=p.sql_similarity,
+                    shared_inputs=p.shared_inputs,
+                    shared_columns=p.shared_columns,
+                    direct_link=p.direct_link,
+                )
+                for p in pairs
+            ],
+        )
 
     def column_lineage(self, project_id: str, unique_id: str, column: str, direction: str) -> ColumnLineageResponse:
         if not self.repo.node(project_id, unique_id):

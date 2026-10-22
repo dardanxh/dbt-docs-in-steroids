@@ -95,10 +95,16 @@ const FLATTEN_ACCENT = "var(--color-muted)";
 export function computeLayout(graph: GraphResponse, opts: LayoutOptions): LayoutResult {
   const { metric } = opts;
 
-  // Normalize the chosen metric across all nodes for coloring.
-  let maxMetric = 0;
-  for (const n of graph.nodes) maxMetric = Math.max(maxMetric, n.metrics[metric] ?? 0);
-  const norm = (v: number) => (maxMetric > 0 ? v / maxMetric : 0);
+  // Color by percentile rank, not share of the max: one extreme hotspot would
+  // otherwise push every other node into the coolest color. The lowest value
+  // maps to 0 (coolest), the highest to 1 (hottest); equal values share a color.
+  const sorted = graph.nodes.map((n) => n.metrics[metric] ?? 0).sort((a, b) => a - b);
+  const below = new Map<number, number>(); // value -> how many nodes are strictly lower
+  sorted.forEach((v, i) => {
+    if (!below.has(v)) below.set(v, i);
+  });
+  const topRank = sorted.length ? (below.get(sorted[sorted.length - 1]) ?? 0) : 0;
+  const norm = (v: number) => (topRank > 0 ? (below.get(v) ?? 0) / topRank : 0);
 
   const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
   const highlightNodes = opts.highlightNodes ?? new Set<string>();

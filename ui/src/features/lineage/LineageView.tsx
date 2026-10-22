@@ -1,12 +1,16 @@
 import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode } from "@xyflow/react";
 import {
   ArrowDown,
+  ArrowLeftRight,
   ArrowRightFromLine,
   ArrowRightToLine,
   ArrowUp,
+  BookOpen,
+  CalendarClock,
   Columns3,
   Crosshair,
   Database,
+  EyeOff,
   FileCode,
   Flame,
   FlaskConical,
@@ -16,6 +20,7 @@ import {
   ListTree,
   type LucideIcon,
   Milestone,
+  Network,
   PanelRight,
   Puzzle,
   RotateCcw,
@@ -181,6 +186,28 @@ const METRICS: { key: MetricKey; label: string; description: string; low: string
     low: "never changed (or no git history)",
     high: "changes often",
   },
+  {
+    key: "doc_coverage",
+    label: "Documentation coverage",
+    description: "Share of the model description + its columns that have a description.",
+    low: "nothing documented",
+    high: "fully documented (here high is good)",
+  },
+  {
+    key: "unused_column_count",
+    label: "Unused columns",
+    description:
+      "Columns no downstream model reads. Only counted when every downstream model's SQL could be parsed; otherwise unknown and shown as 0 (run dbt compile for better coverage).",
+    low: "every column is used, or unknown",
+    high: "many columns nobody reads (dead weight to drop)",
+  },
+  {
+    key: "days_since_change",
+    label: "Days since last change",
+    description: "Days since the last git commit touching the model's file.",
+    low: "changed today (or no git history)",
+    high: "untouched for a long time (stale)",
+  },
 ];
 
 // Icon per metric in the "Color by metric" menu.
@@ -198,6 +225,9 @@ const METRIC_ICONS: Record<MetricKey, LucideIcon> = {
   cohesion: Target,
   column_count: Columns3,
   commit_count: GitCommitHorizontal,
+  doc_coverage: BookOpen,
+  unused_column_count: EyeOff,
+  days_since_change: CalendarClock,
 };
 
 // Categorical colorings (discrete palette + legend) live alongside the numeric
@@ -230,6 +260,7 @@ const DECIMALS: Partial<Record<keyof NodeMetrics, number>> = {
 };
 
 function formatBadge(key: keyof NodeMetrics, v: number): string {
+  if (key === "doc_coverage") return `${Math.round(v * 100)}%`;
   const dp = DECIMALS[key];
   if (dp != null) return v.toFixed(dp);
   if (key === "complexity") return String(Math.round(v));
@@ -278,6 +309,14 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const [relEndpoints, setRelEndpoints] = useState<{ a: string | null; b: string | null }>({
     a: null,
     b: null,
+  });
+  // "Layer dependencies" mode: pick a parent and a child layer and highlight
+  // every direct parent→child edge between them (e.g. reporting → reporting
+  // finds reports built on top of other reports). Exclusive with relationship.
+  const [layerMode, setLayerMode] = useState(false);
+  const [layerPair, setLayerPair] = useState<{ parent: string; child: string }>({
+    parent: "reporting",
+    child: "reporting",
   });
   // Focus tabs: "All" (never closeable) + one closeable tab per focused module,
   // each rendering only that module's lineage subgraph.
@@ -415,20 +454,53 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
 
   // Clicking a model highlights it + its direct inputs/dependents (one hop) and
   // the arrows in/out of it; everything else dims.
-  const selectionHighlight = useMemo(() => {
-    if (!selectedNodeId) return null;
-    const nodes = new Set<string>([selectedNodeId]);
+  // A model plus its direct parents/children, and the edges between them.
+  const neighbourhood = useCallback(
+    (id: string) => {
+      const nodes = new Set<string>([id]);
+      const edges = new Set<string>();
+      for (const p of adjacency.parents.get(id) ?? []) {
+        nodes.add(p);
+        edges.add(`${p}->${id}`);
+      }
+      for (const c of adjacency.children.get(id) ?? []) {
+        nodes.add(c);
+        edges.add(`${id}->${c}`);
+      }
+      return { nodes, edges };
+    },
+    [adjacency],
+  );
+  const selectionHighlight = useMemo(
+    () => (selectedNodeId ? neighbourhood(selectedNodeId) : null),
+    [selectedNodeId, neighbourhood],
+  );
+
+  // Layer dependencies: direct edges from a model in the parent layer to a
+  // model in the child layer. `children` lists each matching child with the
+  // parents it reads, alphabetically.
+  const layerDeps = useMemo(() => {
+    if (!layerMode || !graph) return null;
+    const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+    const nodes = new Set<string>();
     const edges = new Set<string>();
-    for (const p of adjacency.parents.get(selectedNodeId) ?? []) {
-      nodes.add(p);
-      edges.add(`${p}->${selectedNodeId}`);
+    const parentsOf = new Map<string, string[]>();
+    for (const e of graph.edges) {
+      const src = byId.get(e.src);
+      const dst = byId.get(e.dst);
+      if (!src || !dst || src.layer !== layerPair.parent || dst.layer !== layerPair.child) continue;
+      nodes.add(e.src);
+      nodes.add(e.dst);
+      edges.add(`${e.src}->${e.dst}`);
+      const list = parentsOf.get(e.dst) ?? [];
+      list.push(src.name);
+      parentsOf.set(e.dst, list);
     }
-    for (const c of adjacency.children.get(selectedNodeId) ?? []) {
-      nodes.add(c);
-      edges.add(`${selectedNodeId}->${c}`);
-    }
-    return { nodes, edges };
-  }, [selectedNodeId, adjacency]);
+    const children = [...parentsOf.entries()]
+      .map(([id, parents]) => ({ id, name: byId.get(id)?.name ?? id, parents: parents.sort() }))
+      .sort((x, y) => x.name.localeCompare(y.name));
+    return { nodes, edges, children };
+  }, [layerMode, layerPair, graph]);
 
   // Relationship mode: the connecting subgraph between endpoints A and B, i.e.
   // every model on some directed path A→…→B (or B→…→A). Computed as
@@ -524,6 +596,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     // Relationship overrides even inside a focus tab: we always want off-path
     // nodes dimmed so the green connecting route stands out.
     if (relationship) return { nodes: relationship.nodes, edges: relationship.edges };
+    if (layerDeps) return { nodes: layerDeps.nodes, edges: layerDeps.edges };
     if (trace) {
       return {
         nodes: new Set<string>(trace.lineage.columns.map((c) => c.node_id)),
@@ -542,7 +615,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     if (selectionHighlight) return selectionHighlight;
     if (filterMatch) return { nodes: filterMatch, edges: new Set<string>() };
     return { nodes: undefined, edges: undefined };
-  }, [relationship, trace, focusId, columnFlowHighlight, selectionHighlight, filterMatch]);
+  }, [relationship, layerDeps, trace, focusId, columnFlowHighlight, selectionHighlight, filterMatch]);
 
   // A trace often reaches into a collapsed layer (e.g. sources). Expand any
   // layer that contains a highlighted node so the path is actually visible.
@@ -593,16 +666,17 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   // A connecting path often threads through a collapsed layer (e.g. sources).
   // Expand every layer that holds a path node so the green route is visible.
   useEffect(() => {
-    if (!relationship?.connected || !graph) return;
+    const shown = relationship?.connected ? relationship.nodes : layerDeps?.nodes;
+    if (!shown?.size || !graph) return;
     const touched = new Set<string>();
-    for (const n of graph.nodes) if (relationship.nodes.has(n.id)) touched.add(n.layer);
+    for (const n of graph.nodes) if (shown.has(n.id)) touched.add(n.layer);
     setCollapsed((prev) => {
       if (![...touched].some((l) => prev.has(l))) return prev;
       const next = new Set(prev);
       for (const l of touched) next.delete(l);
       return next;
     });
-  }, [relationship, graph]);
+  }, [relationship, layerDeps, graph]);
 
   // Column-usage fractions for the selected node's neighbours.
   const { data: usage } = useColumnUsage(projectId, selectedNodeId);
@@ -728,7 +802,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       flatten,
       colorByStatus,
       tintOverride,
-      connect: !!relationship,
+      connect: !!relationship || !!layerDeps?.nodes.size,
     });
   }, [
     graph,
@@ -743,6 +817,7 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     colorByStatus,
     tintOverride,
     relationship,
+    layerDeps,
   ]);
 
   const reorderLayers = useCallback(
@@ -817,10 +892,44 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       else {
         setSelectedNodeId(null);
         setTrace(null);
+        setLayerMode(false);
       }
       return !on;
     });
   }, []);
+
+  const toggleLayerMode = useCallback(() => {
+    setLayerMode((on) => {
+      if (!on) {
+        setRelMode(false);
+        setRelEndpoints({ a: null, b: null });
+        setSelectedNodeId(null);
+        setTrace(null);
+      }
+      return !on;
+    });
+  }, []);
+
+  // Keyboard: ⇧⌘F (⇧Ctrl-F) focuses the model search, Esc clears the search,
+  // selection and any column trace.
+  const { update: updateSettings } = useSettings();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        if (!settings.sidebarExpanded) updateSettings({ sidebarExpanded: true });
+        // The search box lives in the sidebar portal; wait a tick if it was collapsed.
+        setTimeout(() => document.getElementById(SEARCH_INPUT_ID)?.focus(), 0);
+      } else if (e.key === "Escape") {
+        setSearch("");
+        setSelectedNodeId(null);
+        setTrace(null);
+        if (document.activeElement?.id === SEARCH_INPUT_ID) (document.activeElement as HTMLElement).blur();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [settings.sidebarExpanded, updateSettings]);
 
   // Right-click a model → context menu (focus / view columns).
   const onNodeContextMenu = useCallback((event: React.MouseEvent, node: RFNode) => {
@@ -920,12 +1029,22 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
                 errorsTracked={errorsTracked}
                 relMode={relMode}
                 onToggleRelMode={toggleRelMode}
+                layerMode={layerMode}
+                onToggleLayerMode={toggleLayerMode}
               />
             </>,
             sidebarSlot,
           )}
 
-        {relMode ? (
+        {layerMode && layerDeps ? (
+          <LayerDependencyCard
+            layers={graph.layers.map((l) => l.name)}
+            pair={layerPair}
+            onPair={setLayerPair}
+            result={layerDeps.children}
+            onClose={toggleLayerMode}
+          />
+        ) : relMode ? (
           <RelationshipCard
             models={pickableModels}
             endpointA={relEndpoints.a}
@@ -1199,6 +1318,8 @@ function TabBar({
   );
 }
 
+const SEARCH_INPUT_ID = "lineage-model-search";
+
 // Model search at the top of the left sidebar. Matches highlight in the graph.
 function SearchBar({
   search,
@@ -1218,8 +1339,9 @@ function SearchBar({
         <input
           value={search}
           onChange={(e) => onSearch(e.target.value)}
+          id={SEARCH_INPUT_ID}
           onFocus={onFocus}
-          placeholder="Search models…"
+          placeholder="Search models…  ⇧⌘F"
           className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-muted"
         />
         {matchCount !== null && <span className="shrink-0 text-[11px] text-muted">{matchCount}</span>}
@@ -1234,6 +1356,91 @@ function SearchBar({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// Bottom-left card while "Layer dependencies" is on (replaces the legend):
+// pick the parent and child layer; lists each child model that directly reads
+// a model in the parent layer, with the parents it reads.
+function LayerDependencyCard({
+  layers,
+  pair,
+  onPair,
+  result,
+  onClose,
+}: {
+  layers: string[];
+  pair: { parent: string; child: string };
+  onPair: (p: { parent: string; child: string }) => void;
+  result: { id: string; name: string; parents: string[] }[];
+  onClose: () => void;
+}) {
+  const select = (value: string, onChange: (v: string) => void) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="min-w-0 flex-1 rounded border border-border bg-panel-2 px-2 py-1 text-fg outline-none"
+    >
+      {layers.map((l) => (
+        <option key={l} value={l}>
+          {l}
+        </option>
+      ))}
+    </select>
+  );
+  return (
+    <div className="absolute bottom-4 left-16 z-10 flex w-96 flex-col gap-2 rounded-lg border border-border bg-panel/95 px-3 py-2.5 text-xs shadow-lg backdrop-blur">
+      <div className="flex items-center gap-2">
+        <Network size={13} className="text-emerald-400" />
+        <span className="flex-1 font-medium text-[10px] text-muted uppercase tracking-wide">
+          Layer dependencies
+        </span>
+        <button type="button" onClick={onClose} title="Close" className="text-muted hover:text-fg">
+          <X size={13} />
+        </button>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-12 shrink-0 text-muted">Parent</span>
+        {select(pair.parent, (parent) => onPair({ ...pair, parent }))}
+        <button
+          type="button"
+          onClick={() => onPair({ parent: pair.child, child: pair.parent })}
+          title="Swap parent and child"
+          className="rounded border border-border p-1 text-muted hover:text-fg"
+        >
+          <ArrowLeftRight size={12} />
+        </button>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-12 shrink-0 text-muted">Child</span>
+        {select(pair.child, (child) => onPair({ ...pair, child }))}
+        <span className="w-[26px] shrink-0" />
+      </div>
+      {result.length === 0 ? (
+        <span className="text-[11px] text-muted">
+          No {pair.child} model reads a {pair.parent} model directly.
+        </span>
+      ) : (
+        <>
+          <span className="text-emerald-400">
+            {result.length} {pair.child} model{result.length === 1 ? "" : "s"} read
+            {result.length === 1 ? "s" : ""} from {pair.parent} directly
+          </span>
+          <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
+            {result.map((r) => (
+              <li key={r.id} className="flex flex-col">
+                <span className="truncate font-medium text-fg" title={r.name}>
+                  {r.name}
+                </span>
+                <span className="truncate text-[11px] text-muted" title={r.parents.join(", ")}>
+                  ← {r.parents.join(", ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
@@ -1398,6 +1605,8 @@ function Toolbar({
   errorsTracked,
   relMode,
   onToggleRelMode,
+  layerMode,
+  onToggleLayerMode,
 }: {
   colorBy: ColorKey;
   onColorBy: (m: ColorKey) => void;
@@ -1415,6 +1624,8 @@ function Toolbar({
   errorsTracked: boolean;
   relMode: boolean;
   onToggleRelMode: () => void;
+  layerMode: boolean;
+  onToggleLayerMode: () => void;
 }) {
   const metricOptions: ColorOption<ColorKey>[] = [...METRICS]
     .sort((a, b) => a.label.localeCompare(b.label))
@@ -1553,6 +1764,19 @@ function Toolbar({
       >
         <Route size={16} className={relMode ? "text-emerald-400" : "text-muted"} />
         <span className="flex-1">Check relationship</span>
+      </button>
+      <button
+        type="button"
+        onClick={onToggleLayerMode}
+        aria-pressed={layerMode}
+        title="Pick a parent and a child layer to see which models depend on which (e.g. reports built on reports)"
+        className={cn(
+          "flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left font-medium",
+          layerMode ? "bg-emerald-500/15 text-fg ring-1 ring-emerald-500/50" : "text-fg hover:bg-panel-2",
+        )}
+      >
+        <Network size={16} className={layerMode ? "text-emerald-400" : "text-muted"} />
+        <span className="flex-1">Layer dependencies</span>
       </button>
     </div>
   );

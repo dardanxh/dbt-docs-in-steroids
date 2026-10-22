@@ -13,6 +13,7 @@ from app.core.exceptions import BadRequestError, NotFoundError
 from app.domain.ingestion import git_ownership
 from app.domain.ingestion.artifacts import ArtifactBundle, load_from_path
 from app.domain.ingestion.column_lineage import build_column_edges
+from app.domain.ingestion.column_usage import attach_unused_columns
 from app.domain.ingestion.graph_builder import build_graph
 from app.domain.ingestion.repositories import LineagePersistenceRepository
 from app.domain.ingestion.specs import BuiltGraph, DiagnosticSpec
@@ -56,6 +57,7 @@ class IngestionService:
         try:
             graph = build_graph(bundle)
             column_edges, diagnostics = build_column_edges(graph)
+            attach_unused_columns(graph, column_edges, diagnostics)
             self._attach_ownership(project.source_ref, graph)
             self.persistence.persist(project_id, graph, column_edges, diagnostics)
 

@@ -26,6 +26,10 @@ export interface NodeMetrics {
   test_count: number;
   column_count: number;
   commit_count: number; // git commits touching the model file (churn); 0 without git
+  doc_coverage: number; // 0..1, documented share of (model description + columns)
+  unused_column_count: number; // columns no downstream model reads (0 when unknown)
+  unused_columns_known: boolean; // false: consumers not fully parsed, so unknown
+  days_since_change: number; // days since the last git commit (0 without git)
   // Git ownership (null for upload-mode / non-git projects).
   owner: string | null;
   owner_share: number | null;
@@ -59,7 +63,10 @@ export type MetricKey =
   | "cohesion"
   | "test_count"
   | "column_count"
-  | "commit_count";
+  | "commit_count"
+  | "doc_coverage"
+  | "unused_column_count"
+  | "days_since_change";
 
 export interface GraphNode {
   id: string;
@@ -208,4 +215,28 @@ export interface Analytics {
   errors: ErrorAnalytics;
   dbt_version: string | null;
   adapter: string | null;
+}
+
+export interface NodeRef {
+  id: string;
+  name: string;
+  layer: string;
+}
+
+// A pair of models that look redundant (deterministic scoring, see be/app/domain/lineage/redundancy.py).
+export interface RedundancyPair {
+  a: NodeRef;
+  b: NodeRef;
+  score: number;
+  input_overlap: number;
+  column_overlap: number | null;
+  sql_similarity: number | null;
+  shared_inputs: number;
+  shared_columns: number;
+  direct_link: boolean;
+}
+
+export interface RedundancyResponse {
+  weights: Record<string, number>;
+  pairs: RedundancyPair[];
 }

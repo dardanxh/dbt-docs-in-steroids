@@ -11,6 +11,7 @@ from app.domain.lineage.schemas import (
     GraphResponse,
     MetricValueOut,
     NodeDetailOut,
+    RedundancyResponse,
 )
 from app.domain.lineage.services import LineageService
 
@@ -55,3 +56,13 @@ def get_column_lineage(
     session: Session = Depends(get_session),
 ) -> ColumnLineageResponse:
     return LineageService(session).column_lineage(project_id, node_id, column, direction)
+
+
+@router.get("/redundancy", response_model=RedundancyResponse)
+def get_redundancy(
+    project_id: str,
+    min_score: float = Query(0.5, ge=0.0, le=1.0),
+    limit: int = Query(50, ge=1, le=500),
+    session: Session = Depends(get_session),
+) -> RedundancyResponse:
+    return LineageService(session).redundancy(project_id, min_score, limit)

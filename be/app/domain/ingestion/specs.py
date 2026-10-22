@@ -38,6 +38,9 @@ class NodeMetrics:
     test_count: int = 0  # tests referencing this node
     column_count: int = 0  # number of columns
     commit_count: int = 0  # git commits touching the file (churn; 0 when no git history)
+    doc_coverage: float = 0.0  # 0..1, documented share of (model description + columns)
+    unused_column_count: int = 0  # columns no downstream model reads (see column_usage.py)
+    unused_columns_known: bool = False  # False when it can't be determined reliably
 
 
 @dataclass

@@ -25,6 +25,9 @@ class LineageReadRepository:
         )
         return list(self.session.scalars(stmt))
 
+    def all_columns(self, project_id: str) -> list[NodeColumn]:
+        return list(self.session.scalars(select(NodeColumn).where(NodeColumn.project_id == project_id)))
+
     def edges(self, project_id: str) -> list[NodeEdge]:
         return list(self.session.scalars(select(NodeEdge).where(NodeEdge.project_id == project_id)))
 

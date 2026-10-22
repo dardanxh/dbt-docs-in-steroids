@@ -223,10 +223,31 @@ function Metrics({ node }: { node: NodeDetail }) {
     ["Cohesion", m.cohesion.toFixed(2), "Heuristic: 1 / number of upstream sources (higher = more cohesive)"],
     ["Tests", m.test_count, "Tests referencing this model"],
   ];
+  const upkeep: [string, number | string, string][] = [
+    ["Columns", m.column_count, "Output columns"],
+    [
+      "Docs",
+      `${Math.round(m.doc_coverage * 100)}%`,
+      "Share of the model description + its columns that have a description",
+    ],
+    [
+      "Unused cols",
+      m.unused_columns_known ? m.unused_column_count : "?",
+      m.unused_columns_known
+        ? "Columns no downstream model reads"
+        : "Unknown: no downstream models, or their SQL couldn't be fully parsed (run dbt compile)",
+    ],
+    [
+      "Days idle",
+      m.last_modified_at ? m.days_since_change : "–",
+      "Days since the last git commit to this model",
+    ],
+  ];
   return (
     <div className="border-border border-b">
       <Grid items={lineage} />
       <Grid items={quality} />
+      <Grid items={upkeep} />
     </div>
   );
 }

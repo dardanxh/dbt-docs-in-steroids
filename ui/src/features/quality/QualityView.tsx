@@ -12,7 +12,10 @@ type SortKey =
   | "cohesion"
   | "test_count"
   | "column_count"
-  | "commit_count";
+  | "commit_count"
+  | "doc_coverage"
+  | "unused_column_count"
+  | "days_since_change";
 
 const COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
   { key: "name", label: "Model", numeric: false },
@@ -23,6 +26,9 @@ const COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
   { key: "test_count", label: "Tests", numeric: true },
   { key: "column_count", label: "Cols", numeric: true },
   { key: "commit_count", label: "Commits", numeric: true },
+  { key: "doc_coverage", label: "Docs", numeric: true },
+  { key: "unused_column_count", label: "Unused cols", numeric: true },
+  { key: "days_since_change", label: "Days idle", numeric: true },
 ];
 
 export function QualityView({
@@ -126,6 +132,13 @@ export function QualityView({
                 </td>
                 <td className="px-3 py-1.5 text-right text-muted">{m.metrics.column_count}</td>
                 <td className="px-3 py-1.5 text-right text-muted">{m.metrics.commit_count}</td>
+                <td className="px-3 py-1.5 text-right text-muted">
+                  {Math.round(m.metrics.doc_coverage * 100)}%
+                </td>
+                <td className="px-3 py-1.5 text-right text-muted">
+                  {m.metrics.unused_columns_known ? m.metrics.unused_column_count : "?"}
+                </td>
+                <td className="px-3 py-1.5 text-right text-muted">{m.metrics.days_since_change}</td>
               </tr>
             ))}
           </tbody>

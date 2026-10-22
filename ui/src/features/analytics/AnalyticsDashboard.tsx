@@ -16,6 +16,7 @@ import { useThemeTokens } from "@/lib/settings";
 import type { Analytics, ErrorAnalytics, OwnershipStats } from "@/types";
 import { useAnalytics } from "./api";
 import { QualityScatter } from "./QualityScatter";
+import { RedundancyCandidates } from "./RedundancyCandidates";
 
 const CHART_COLORS = ["#818cf8", "#38bdf8", "#f472b6", "#34d399", "#fbbf24", "#94a3b8"];
 
@@ -68,6 +69,12 @@ export function AnalyticsDashboard({
         <div className="lg:col-span-2">
           <Card title="Compare two qualities">
             <QualityScatter projectId={projectId} onOpenNode={onOpenNode} />
+          </Card>
+        </div>
+
+        <div className="lg:col-span-2">
+          <Card title="Redundancy candidates (merge into one reusable model?)">
+            <RedundancyCandidates projectId={projectId} onOpenNode={onOpenNode} />
           </Card>
         </div>
 

@@ -8,6 +8,9 @@ export type BadgeMetric =
   | "cohesion"
   | "column_count"
   | "commit_count"
+  | "doc_coverage"
+  | "unused_column_count"
+  | "days_since_change"
   | "downstream_count"
   | "none";
 

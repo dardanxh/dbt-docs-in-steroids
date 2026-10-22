@@ -19,6 +19,10 @@ class NodeMetricsOut(BaseModel):
     test_count: int
     column_count: int
     commit_count: int = 0  # git commits touching the model file (churn)
+    doc_coverage: float = 0.0  # 0..1, documented share of (model description + columns)
+    unused_column_count: int = 0  # columns no downstream model reads
+    unused_columns_known: bool = False  # False: consumers not fully parsed, count unknown
+    days_since_change: int = 0  # days since the last git commit (computed at read time; 0 without git)
     # Git ownership (null for upload-mode / non-git projects).
     owner: str | None = None
     owner_share: float | None = None
@@ -134,3 +138,26 @@ class ColumnLineageResponse(BaseModel):
     edges: list[ColumnEdgeOut]
     source_columns: list[ColumnRefOut]
     partial: bool
+
+
+class NodeRefOut(BaseModel):
+    id: str
+    name: str
+    layer: str
+
+
+class RedundancyPairOut(BaseModel):
+    a: NodeRefOut
+    b: NodeRefOut
+    score: float  # weighted mean of the available signals, 0..1
+    input_overlap: float  # Jaccard of direct upstream sets
+    column_overlap: float | None  # Jaccard of output column names (null if either has none)
+    sql_similarity: float | None  # Jaccard of SQL 3-token shingles (null if either has no SQL)
+    shared_inputs: int
+    shared_columns: int
+    direct_link: bool  # one model reads the other
+
+
+class RedundancyResponse(BaseModel):
+    weights: dict[str, float]
+    pairs: list[RedundancyPairOut]

@@ -196,6 +196,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/redundancy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Redundancy */
+        get: operations["get_redundancy_api_v1_projects__project_id__redundancy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/analytics": {
         parameters: {
             query?: never;
@@ -609,6 +626,26 @@ export interface components {
              * @default 0
              */
             commit_count: number;
+            /**
+             * Doc Coverage
+             * @default 0
+             */
+            doc_coverage: number;
+            /**
+             * Unused Column Count
+             * @default 0
+             */
+            unused_column_count: number;
+            /**
+             * Unused Columns Known
+             * @default false
+             */
+            unused_columns_known: boolean;
+            /**
+             * Days Since Change
+             * @default 0
+             */
+            days_since_change: number;
             /** Owner */
             owner?: string | null;
             /** Owner Share */
@@ -627,6 +664,15 @@ export interface components {
              * @default 0
              */
             error_count: number;
+        };
+        /** NodeRefOut */
+        NodeRefOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Layer */
+            layer: string;
         };
         /** OwnerStat */
         OwnerStat: {
@@ -674,6 +720,34 @@ export interface components {
             stats: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** RedundancyPairOut */
+        RedundancyPairOut: {
+            a: components["schemas"]["NodeRefOut"];
+            b: components["schemas"]["NodeRefOut"];
+            /** Score */
+            score: number;
+            /** Input Overlap */
+            input_overlap: number;
+            /** Column Overlap */
+            column_overlap: number | null;
+            /** Sql Similarity */
+            sql_similarity: number | null;
+            /** Shared Inputs */
+            shared_inputs: number;
+            /** Shared Columns */
+            shared_columns: number;
+            /** Direct Link */
+            direct_link: boolean;
+        };
+        /** RedundancyResponse */
+        RedundancyResponse: {
+            /** Weights */
+            weights: {
+                [key: string]: number;
+            };
+            /** Pairs */
+            pairs: components["schemas"]["RedundancyPairOut"][];
         };
         /**
          * SourceType
@@ -1102,6 +1176,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ColumnLineageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_redundancy_api_v1_projects__project_id__redundancy_get: {
+        parameters: {
+            query?: {
+                min_score?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedundancyResponse"];
                 };
             };
             /** @description Validation Error */

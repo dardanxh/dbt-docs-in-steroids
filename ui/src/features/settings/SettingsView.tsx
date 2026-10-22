@@ -15,6 +15,9 @@ const BADGE_METRICS: { value: BadgeMetric; label: string }[] = [
   { value: "cohesion", label: "Cohesion" },
   { value: "column_count", label: "Column count" },
   { value: "commit_count", label: "Commit count" },
+  { value: "doc_coverage", label: "Documentation coverage" },
+  { value: "unused_column_count", label: "Unused columns" },
+  { value: "days_since_change", label: "Days since last change" },
   { value: "downstream_count", label: "Downstream users" },
   { value: "none", label: "None (off)" },
 ];

@@ -223,9 +223,12 @@ def _keyword_complexity(sql: str) -> float:
 
 
 def _compute_code_metrics(nodes: dict[str, NodeSpec], manifest: dict[str, Any]) -> None:
-    """LOC, complexity, cohesion, column_count, test_count (heuristics)."""
+    """LOC, complexity, cohesion, column_count, doc_coverage, test_count (heuristics)."""
     for node in nodes.values():
         node.metrics.column_count = len(node.columns)
+        # Documentation: the model description counts as one item, plus each column.
+        documented = (1 if node.description else 0) + sum(1 for c in node.columns if c.description)
+        node.metrics.doc_coverage = round(documented / (1 + len(node.columns)), 3)
         if node.resource_type == ResourceType.MODEL and node.raw_code:
             node.metrics.loc = sum(1 for ln in node.raw_code.splitlines() if ln.strip())
             node.metrics.complexity = _keyword_complexity(node.raw_code)

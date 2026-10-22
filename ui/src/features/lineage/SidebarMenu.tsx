@@ -109,14 +109,19 @@ export function ColorOptionList<K extends string>({
   return (
     <div className="flex flex-col gap-0.5">
       {scale && (
-        <div className="flex items-center gap-2 px-2 pt-1 pb-2 text-[11px] text-muted">
-          0
-          <span className="flex h-2.5 flex-1 overflow-hidden rounded-sm">
-            {STOPS.map((s) => (
-              <span key={s} className="h-full flex-1" style={{ background: scale(s) }} />
-            ))}
+        <div className="flex flex-col gap-1 px-2 pt-1 pb-2 text-[11px] text-muted">
+          <div className="flex items-center gap-2">
+            0
+            <span className="flex h-2.5 flex-1 overflow-hidden rounded-sm">
+              {STOPS.map((s) => (
+                <span key={s} className="h-full flex-1" style={{ background: scale(s) }} />
+              ))}
+            </span>
+            High
+          </div>
+          <span className="text-[10px]">
+            Colors follow each model's rank, so one extreme model can't wash out the rest.
           </span>
-          High
         </div>
       )}
       {options.map((o) => {
