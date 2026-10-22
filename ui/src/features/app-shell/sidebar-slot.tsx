@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useContext, useState } from "react";
 
-// Lets a view (LineageView) render contextual controls INTO the right sidebar
+// Lets a view (LineageView) render contextual controls INTO the left sidebar
 // via a portal, while keeping the controls' state local to that view.
 interface SlotCtx {
   target: HTMLElement | null;

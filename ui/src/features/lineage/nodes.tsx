@@ -13,7 +13,6 @@ export function ModelNode({ data, selected }: NodeProps) {
     highlighted: boolean;
     connected: boolean;
     badge?: string;
-    fullName?: boolean;
   };
   // The strip + handles follow the active "Color by" quality, and the card gets a
   // light wash of the same color (the layer is shown by the column header).
@@ -21,9 +20,9 @@ export function ModelNode({ data, selected }: NodeProps) {
   return (
     <div
       style={{
-        // Full-names mode grows the node to its content; otherwise fixed width + truncate.
-        width: d.fullName ? "max-content" : NODE_WIDTH,
-        maxWidth: d.fullName ? 620 : undefined,
+        // Grow to the full name (capped); columns are spaced to fit in layout.ts.
+        width: "max-content",
+        maxWidth: 620,
         borderLeftColor: accent,
         background: `color-mix(in srgb, ${d.tint} 22%, var(--color-panel))`,
       }}
@@ -44,10 +43,7 @@ export function ModelNode({ data, selected }: NodeProps) {
           🌱
         </span>
       ) : null}
-      <span
-        className={cn("font-medium text-fg", d.fullName ? "whitespace-nowrap" : "min-w-0 flex-1 truncate")}
-        title={d.label}
-      >
+      <span className="whitespace-nowrap font-medium text-fg" title={d.label}>
         {d.label}
       </span>
       {d.badge && (

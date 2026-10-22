@@ -1,20 +1,37 @@
 import { Background, BackgroundVariant, Controls, ReactFlow, type Node as RFNode } from "@xyflow/react";
 import {
   ArrowDown,
+  ArrowRightFromLine,
+  ArrowRightToLine,
   ArrowUp,
-  ChevronDown,
-  ChevronRight,
+  Columns3,
   Crosshair,
+  Database,
+  FileCode,
+  Flame,
+  FlaskConical,
+  GitCommitHorizontal,
   GripVertical,
   Layers,
+  ListTree,
+  type LucideIcon,
+  Milestone,
   PanelRight,
+  Puzzle,
   RotateCcw,
   Route,
   Scan,
   Search,
-  Text,
-  Wand2,
+  Shapes,
+  Share2,
+  ShieldAlert,
+  SlidersHorizontal,
+  Target,
+  TriangleAlert,
+  UserRound,
+  Users,
   Waypoints,
+  Workflow,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +55,7 @@ import { useColumnLineage, useColumnUsage, useGraph, useNodeDetail } from "./api
 import { computeLayout } from "./layout";
 import { NodePanel } from "./NodePanel";
 import { CollapsedNode, HeaderNode, ModelNode } from "./nodes";
+import { type ColorOption, ColorOptionList, SidebarMenu, SwitchRow } from "./SidebarMenu";
 
 const NODE_TYPES = { model: ModelNode, header: HeaderNode, collapsed: CollapsedNode };
 
@@ -69,24 +87,121 @@ function saveLayerOrder(projectId: string, order: string[] | null) {
   }
 }
 
-const METRICS: { key: MetricKey; label: string }[] = [
-  { key: "downstream_count", label: "Downstream users (hotspots)" },
-  { key: "upstream_count", label: "Upstream depth" },
-  { key: "fan_out", label: "Direct dependents" },
-  { key: "fan_in", label: "Direct inputs" },
-  { key: "betweenness", label: "Betweenness centrality" },
-  { key: "degree_centrality", label: "Degree centrality" },
-  { key: "hotspot_score", label: "Hotspot score" },
-  { key: "complexity", label: "SQL complexity" },
-  { key: "loc", label: "Lines of code" },
-  { key: "test_count", label: "Test count" },
-  { key: "cohesion", label: "Cohesion" },
-  { key: "column_count", label: "Column count" },
-  { key: "commit_count", label: "Commit count (churn)" },
+// Each metric's description says what it measures, plus what the cool (0) and
+// hot (high) ends of its heat scale mean — shown in the "Color by metric" menu.
+const METRICS: { key: MetricKey; label: string; description: string; low: string; high: string }[] = [
+  {
+    key: "downstream_count",
+    label: "Downstream users (hotspots)",
+    description: "Models that depend on this one, directly or indirectly.",
+    low: "nothing uses it",
+    high: "a hotspot many models rely on; a change ripples far",
+  },
+  {
+    key: "upstream_count",
+    label: "Upstream depth",
+    description: "Models and sources feeding this one, directly or indirectly.",
+    low: "close to the sources",
+    high: "deep in the pipeline",
+  },
+  {
+    key: "fan_out",
+    label: "Direct dependents",
+    description: "Models that read from this one directly.",
+    low: "a leaf nobody reads",
+    high: "widely reused",
+  },
+  {
+    key: "fan_in",
+    label: "Direct inputs",
+    description: "Models and sources this one reads directly.",
+    low: "no inputs",
+    high: "joins many inputs together",
+  },
+  {
+    key: "betweenness",
+    label: "Betweenness centrality",
+    description: "How often this model sits on the paths between other models.",
+    low: "on no path",
+    high: "a bridge or bottleneck much of the graph flows through",
+  },
+  {
+    key: "degree_centrality",
+    label: "Degree centrality",
+    description: "Share of all models directly connected to this one (inputs + dependents).",
+    low: "isolated",
+    high: "heavily connected",
+  },
+  {
+    key: "hotspot_score",
+    label: "Hotspot score",
+    description: "Downstream users scaled 0–1 against the most-used model.",
+    low: "unused",
+    high: "the most-used model",
+  },
+  {
+    key: "complexity",
+    label: "SQL complexity",
+    description: "Weighted count of joins, CTEs, subqueries, window functions and CASE expressions.",
+    low: "a plain select",
+    high: "complex SQL that's hard to read and change",
+  },
+  {
+    key: "loc",
+    label: "Lines of code",
+    description: "Non-blank lines of SQL.",
+    low: "no SQL",
+    high: "a long model",
+  },
+  {
+    key: "test_count",
+    label: "Test count",
+    description: "Tests that reference this model.",
+    low: "untested",
+    high: "well covered (here high is good)",
+  },
+  {
+    key: "cohesion",
+    label: "Cohesion",
+    description: "1 ÷ number of distinct upstream inputs.",
+    low: "pulls from many inputs",
+    high: "reads from a single input (focused)",
+  },
+  {
+    key: "column_count",
+    label: "Column count",
+    description: "Columns in the model.",
+    low: "no known columns",
+    high: "a wide model with a large footprint",
+  },
+  {
+    key: "commit_count",
+    label: "Commit count (churn)",
+    description: "Git commits that touched the model's file.",
+    low: "never changed (or no git history)",
+    high: "changes often",
+  },
 ];
 
+// Icon per metric in the "Color by metric" menu.
+const METRIC_ICONS: Record<MetricKey, LucideIcon> = {
+  downstream_count: Users,
+  upstream_count: ListTree,
+  fan_out: ArrowRightFromLine,
+  fan_in: ArrowRightToLine,
+  betweenness: Milestone,
+  degree_centrality: Share2,
+  hotspot_score: Flame,
+  complexity: Puzzle,
+  loc: FileCode,
+  test_count: FlaskConical,
+  cohesion: Target,
+  column_count: Columns3,
+  commit_count: GitCommitHorizontal,
+};
+
 // Categorical colorings (discrete palette + legend) live alongside the numeric
-// heat metrics in the same "Color by" dropdown.
+// heat metrics in the same "Color by" menu.
 const STATUS_COLOR_KEY = "column_lineage_status";
 const OWNER_COLOR_KEY = "git_owner";
 const RISK_COLOR_KEY = "ownership_risk";
@@ -185,14 +300,9 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     setActiveKey((cur) => (cur === key ? "all" : cur));
   }, []);
   const [layerOrder, setLayerOrder] = useState<string[] | null>(null);
-  // Layout refinements: `tidy` reorders nodes within columns to reduce edge
-  // crossings; `flatten` ignores semantic layers and columns by dependency depth.
-  const [tidy, setTidy] = useState(false);
+  // Layout refinement: `flatten` ignores semantic layers and columns by dependency depth.
   const [flatten, setFlatten] = useState(false);
-  // Grow nodes to fit their full name (no truncation); re-spaces columns.
-  const [fullNames, setFullNames] = useState(false);
   const [search, setSearch] = useState("");
-  const [testFilter, setTestFilter] = useState<"all" | "untested" | "tested">("all");
   // Filter-by-owner: union of the selected actors' models is highlighted (like
   // search). Driven by clicking chips in the owner legend.
   const [ownerFilter, setOwnerFilter] = useState<Set<string>>(new Set());
@@ -356,22 +466,20 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     return { nodes: on, edges, connected: true };
   }, [relEndpoints, graph, adjacency]);
 
-  // Search / filter: matched node set (name substring + test filter). Null when
+  // Search / filter: matched node set (name substring + owner filter). Null when
   // no filter is active.
-  const filterActive = search.trim() !== "" || testFilter !== "all" || ownerFilter.size > 0;
+  const filterActive = search.trim() !== "" || ownerFilter.size > 0;
   const filterMatch = useMemo(() => {
     if (!graph || !filterActive) return null;
     const q = search.trim().toLowerCase();
     const matched = new Set<string>();
     for (const n of graph.nodes) {
       if (q && !n.name.toLowerCase().includes(q)) continue;
-      if (testFilter === "untested" && !(n.resource_type === "model" && n.metrics.test_count === 0)) continue;
-      if (testFilter === "tested" && !(n.metrics.test_count > 0)) continue;
       if (ownerFilter.size > 0 && !(n.metrics.owner && ownerFilter.has(n.metrics.owner))) continue;
       matched.add(n.id);
     }
     return matched;
-  }, [graph, filterActive, search, testFilter, ownerFilter]);
+  }, [graph, filterActive, search, ownerFilter]);
 
   // Column-flow data: the focused model's columns (for the picker) and the
   // selected column's up+down lineage. Both hooks stay disabled unless the
@@ -608,11 +716,9 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
       focusIds: focusSet,
       layerOrder: layerOrder ?? undefined,
       badges,
-      tidy,
       flatten,
       colorByStatus,
       tintOverride,
-      fullNames,
       connect: !!relationship,
     });
   }, [
@@ -624,11 +730,9 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     focusSet,
     layerOrder,
     badges,
-    tidy,
     flatten,
     colorByStatus,
     tintOverride,
-    fullNames,
     relationship,
   ]);
 
@@ -776,50 +880,50 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
           </div>
         )}
 
-        {/* Dock the controls into the right sidebar; when the sidebar is
+        {/* Dock the controls into the left sidebar; when the sidebar is
             collapsed (no slot) we simply hide them rather than float a panel
             over the canvas. */}
         {sidebarSlot &&
           createPortal(
-            <Toolbar
-              colorBy={colorBy}
-              onColorBy={setColorBy}
-              coverage={graph.coverage}
-              collapsedCount={collapsed.size}
-              onExpandAll={() => setCollapsed(new Set())}
-              onCollapseAll={() => setCollapsed(new Set(graph.layers.map((l) => l.name)))}
-              tidy={tidy}
-              onTidy={() => setTidy((v) => !v)}
-              flatten={flatten}
-              onFlatten={() => setFlatten((v) => !v)}
-              fullNames={fullNames}
-              onFullNames={() => setFullNames((v) => !v)}
-              layerOrder={layerOrder ?? graph.layers.map((l) => l.name)}
-              onReorderLayers={reorderLayers}
-              onResetLayerOrder={resetLayerOrder}
-              canResetLayerOrder={
-                !!layerOrder && layerOrder.join() !== graph.layers.map((l) => l.name).join()
-              }
-              owners={owners}
-              ownershipTracked={ownershipTracked}
-              ownerFilter={ownerFilter}
-              onToggleOwner={toggleOwner}
-              onClearOwners={() => setOwnerFilter(new Set())}
-              errorsTracked={errorsTracked}
-              materializations={materializations}
-            />,
+            <>
+              <SearchBar
+                search={search}
+                onSearch={setSearch}
+                onFocus={onSearchFocus}
+                matchCount={filterMatch?.size ?? null}
+              />
+              <Toolbar
+                colorBy={colorBy}
+                onColorBy={setColorBy}
+                layerCount={graph.layers.length}
+                collapsedCount={collapsed.size}
+                onExpandAll={() => setCollapsed(new Set())}
+                onCollapseAll={() => setCollapsed(new Set(graph.layers.map((l) => l.name)))}
+                flatten={flatten}
+                onFlatten={() => setFlatten((v) => !v)}
+                layerOrder={layerOrder ?? graph.layers.map((l) => l.name)}
+                onReorderLayers={reorderLayers}
+                onResetLayerOrder={resetLayerOrder}
+                canResetLayerOrder={
+                  !!layerOrder && layerOrder.join() !== graph.layers.map((l) => l.name).join()
+                }
+                ownershipTracked={ownershipTracked}
+                errorsTracked={errorsTracked}
+              />
+            </>,
             sidebarSlot,
           )}
 
+        <GraphLegend
+          colorBy={colorBy}
+          owners={owners}
+          ownerFilter={ownerFilter}
+          onToggleOwner={toggleOwner}
+          onClearOwners={() => setOwnerFilter(new Set())}
+          materializations={materializations}
+        />
+
         <div className="-translate-x-1/2 absolute top-4 left-1/2 z-10 flex flex-col items-center gap-2">
-          <SearchBar
-            search={search}
-            onSearch={setSearch}
-            onFocus={onSearchFocus}
-            testFilter={testFilter}
-            onTestFilter={setTestFilter}
-            matchCount={filterMatch?.size ?? null}
-          />
           <RelationshipBar
             active={relMode}
             onToggle={toggleRelMode}
@@ -1084,59 +1188,41 @@ function TabBar({
   );
 }
 
+// Model search at the top of the left sidebar. Matches highlight in the graph.
 function SearchBar({
   search,
   onSearch,
   onFocus,
-  testFilter,
-  onTestFilter,
   matchCount,
 }: {
   search: string;
   onSearch: (v: string) => void;
   onFocus: () => void;
-  testFilter: "all" | "untested" | "tested";
-  onTestFilter: (v: "all" | "untested" | "tested") => void;
   matchCount: number | null;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border bg-panel/95 px-2 py-1 text-xs shadow-lg backdrop-blur">
-      <Search size={13} className="text-muted" />
-      <input
-        value={search}
-        onChange={(e) => onSearch(e.target.value)}
-        onFocus={onFocus}
-        placeholder="Search models…"
-        className="w-44 bg-transparent text-fg outline-none placeholder:text-muted"
-      />
-      <div className="flex overflow-hidden rounded border border-border">
-        {(["all", "tested", "untested"] as const).map((f) => (
+    <div className="px-2 pt-1 pb-2">
+      <div className="flex items-center gap-2 rounded-md border border-border bg-panel-2 px-2 py-1.5 text-xs focus-within:border-accent">
+        <Search size={13} className="shrink-0 text-muted" />
+        <input
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+          onFocus={onFocus}
+          placeholder="Search models…"
+          className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-muted"
+        />
+        {matchCount !== null && <span className="shrink-0 text-[11px] text-muted">{matchCount}</span>}
+        {search && (
           <button
-            key={f}
             type="button"
-            onClick={() => onTestFilter(f)}
-            className={cn(
-              "px-1.5 py-0.5 text-[10px]",
-              testFilter === f ? "bg-panel-2 text-fg" : "text-muted hover:text-fg",
-            )}
+            onClick={() => onSearch("")}
+            title="Clear search"
+            className="shrink-0 text-muted hover:text-fg"
           >
-            {f}
+            <X size={12} />
           </button>
-        ))}
+        )}
       </div>
-      {matchCount !== null && <span className="text-muted">{matchCount} match</span>}
-      {(search || testFilter !== "all") && (
-        <button
-          type="button"
-          onClick={() => {
-            onSearch("");
-            onTestFilter("all");
-          }}
-          className="text-muted hover:text-fg"
-        >
-          <X size={12} />
-        </button>
-      )}
     </div>
   );
 }
@@ -1214,78 +1300,179 @@ function Endpoint({ label, name }: { label: string; name: string | null }) {
 function Toolbar({
   colorBy,
   onColorBy,
-  coverage,
+  layerCount,
   collapsedCount,
   onExpandAll,
   onCollapseAll,
-  tidy,
-  onTidy,
   flatten,
   onFlatten,
-  fullNames,
-  onFullNames,
   layerOrder,
   onReorderLayers,
   onResetLayerOrder,
   canResetLayerOrder,
-  owners,
   ownershipTracked,
-  ownerFilter,
-  onToggleOwner,
-  onClearOwners,
   errorsTracked,
-  materializations,
 }: {
   colorBy: ColorKey;
   onColorBy: (m: ColorKey) => void;
-  coverage: Record<string, number>;
+  layerCount: number;
   collapsedCount: number;
   onExpandAll: () => void;
   onCollapseAll: () => void;
-  tidy: boolean;
-  onTidy: () => void;
   flatten: boolean;
   onFlatten: () => void;
-  fullNames: boolean;
-  onFullNames: () => void;
   layerOrder: string[];
   onReorderLayers: (from: number, to: number) => void;
   onResetLayerOrder: () => void;
   canResetLayerOrder: boolean;
-  owners: { owner: string; count: number }[];
   ownershipTracked: boolean;
+  errorsTracked: boolean;
+}) {
+  const metricOptions: ColorOption<ColorKey>[] = [...METRICS]
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .map((m) => {
+      const Icon = METRIC_ICONS[m.key];
+      return { ...m, icon: <Icon size={15} /> };
+    });
+  const categoryOptions: ColorOption<ColorKey>[] = [
+    {
+      key: STATUS_COLOR_KEY,
+      label: "Column lineage status",
+      icon: <Workflow size={15} />,
+      description:
+        "Whether column-level lineage could be traced from the model's SQL: ok, partial, or failed.",
+    },
+    {
+      key: MATERIALIZATION_COLOR_KEY,
+      label: "Materialization",
+      icon: <Database size={15} />,
+      description: "How dbt builds the model: table, view, incremental, snapshot, ephemeral…",
+    },
+    ...(errorsTracked
+      ? [
+          {
+            key: ERROR_COLOR_KEY,
+            label: "Errors (failure heat)",
+            icon: <TriangleAlert size={15} />,
+            description: "Operational errors uploaded for this model.",
+            low: "no errors",
+            high: "fails often",
+          } as const,
+        ]
+      : []),
+    ...(ownershipTracked
+      ? ([
+          {
+            key: OWNER_COLOR_KEY,
+            label: "Git owner",
+            icon: <UserRound size={15} />,
+            description:
+              "Top git contributor per model, one color per person. Click names in the legend to filter.",
+          },
+          {
+            key: RISK_COLOR_KEY,
+            label: "Ownership risk (bus factor)",
+            icon: <ShieldAlert size={15} />,
+            description:
+              "Combines downstream impact, a single dominant owner and staleness. High = many models rely on code one person knows and hasn't touched recently.",
+          },
+        ] as const)
+      : []),
+  ];
+  const allCollapsed = layerCount > 0 && collapsedCount === layerCount;
+
+  return (
+    <div className="flex flex-col gap-0.5 px-2 pb-3 text-xs">
+      <SidebarMenu icon={<Flame size={16} />} label="Metrics" title="Color by metric">
+        {(close) => (
+          <ColorOptionList
+            scale={hotspotColor}
+            options={metricOptions}
+            value={colorBy}
+            onChange={(k) => {
+              onColorBy(k);
+              close();
+            }}
+          />
+        )}
+      </SidebarMenu>
+      <SidebarMenu icon={<Shapes size={16} />} label="Categories" title="Color by category">
+        {(close) => (
+          <ColorOptionList
+            options={categoryOptions}
+            value={colorBy}
+            onChange={(k) => {
+              onColorBy(k);
+              close();
+            }}
+          />
+        )}
+      </SidebarMenu>
+      <SidebarMenu icon={<Layers size={16} />} label="Layers" title="Layers">
+        {() => (
+          <div className="flex flex-col gap-2">
+            <SwitchRow
+              label="Show layers"
+              description={
+                flatten
+                  ? "Off: columns follow dependency depth (longest path from a root)."
+                  : "On: one column per layer (source → stage → dwh → …)."
+              }
+              checked={!flatten}
+              onChange={onFlatten}
+            />
+            {/* Manual column order only applies to semantic layers, not
+                flattened depth stages. */}
+            {!flatten && (
+              <LayerOrderList
+                order={layerOrder}
+                onReorder={onReorderLayers}
+                onReset={onResetLayerOrder}
+                canReset={canResetLayerOrder}
+              />
+            )}
+          </div>
+        )}
+      </SidebarMenu>
+      <SidebarMenu icon={<SlidersHorizontal size={16} />} label="Others" title="Others">
+        {() => (
+          <SwitchRow
+            label="Collapse all layers"
+            description={
+              flatten
+                ? "Only available when layers are on."
+                : `On: fold every layer into a single box. Off: show every model. (${collapsedCount} of ${layerCount} collapsed now)`
+            }
+            checked={allCollapsed}
+            onChange={(on) => (on ? onCollapseAll() : onExpandAll())}
+            disabled={flatten}
+          />
+        )}
+      </SidebarMenu>
+    </div>
+  );
+}
+
+// Floating legend for the active coloring, bottom-left of the canvas.
+function GraphLegend({
+  colorBy,
+  owners,
+  ownerFilter,
+  onToggleOwner,
+  onClearOwners,
+  materializations,
+}: {
+  colorBy: ColorKey;
+  owners: { owner: string; count: number }[];
   ownerFilter: Set<string>;
   onToggleOwner: (owner: string) => void;
   onClearOwners: () => void;
-  errorsTracked: boolean;
   materializations: { key: string; label: string; color: string }[];
 }) {
+  const title = colorBy === STATUS_COLOR_KEY ? "Column lineage status" : colorLabel(colorBy);
   return (
-    <div className="flex flex-col gap-2 border-border border-t px-3 py-3 text-xs">
-      <div className="font-medium text-[10px] text-muted uppercase tracking-wide">Graph controls</div>
-      <div className="flex flex-col gap-1">
-        <span className="text-muted">Color by</span>
-        <select
-          value={colorBy}
-          onChange={(e) => onColorBy(e.target.value as ColorKey)}
-          className="w-full rounded border border-border bg-panel-2 px-2 py-1 text-fg outline-none"
-        >
-          <optgroup label="Metrics (heat)">
-            {METRICS.map((m) => (
-              <option key={m.key} value={m.key}>
-                {m.label}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="Categories">
-            <option value={STATUS_COLOR_KEY}>Column lineage status</option>
-            <option value={MATERIALIZATION_COLOR_KEY}>Materialization</option>
-            {errorsTracked && <option value={ERROR_COLOR_KEY}>Errors (failure heat)</option>}
-            {ownershipTracked && <option value={OWNER_COLOR_KEY}>Git owner</option>}
-            {ownershipTracked && <option value={RISK_COLOR_KEY}>Ownership risk (bus factor)</option>}
-          </optgroup>
-        </select>
-      </div>
+    <div className="absolute bottom-4 left-16 z-10 flex max-w-80 flex-col gap-1.5 rounded-lg border border-border bg-panel/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
+      <span className="font-medium text-[10px] text-muted uppercase tracking-wide">{title}</span>
       {colorBy === OWNER_COLOR_KEY ? (
         <OwnerLegend
           owners={owners}
@@ -1300,107 +1487,18 @@ function Toolbar({
       ) : (
         <Legend status={colorBy === STATUS_COLOR_KEY} />
       )}
-      <div className="flex flex-col gap-1.5">
-        <span className="text-muted">Layout</span>
-        <div className="flex flex-col gap-1">
-          <ToggleButton
-            active={tidy}
-            onClick={onTidy}
-            title="Reorder nodes within each column to reduce edge crossings"
-          >
-            <Wand2 size={13} /> Untangle
-          </ToggleButton>
-          <ToggleButton
-            active={!flatten}
-            onClick={onFlatten}
-            title={
-              flatten
-                ? "Layers are off: columns follow dependency depth. Click to lay out by layer"
-                : "Layers are on: one column per layer. Click to lay out by dependency depth instead"
-            }
-          >
-            <Layers size={13} /> {flatten ? "Layers off" : "Layers on"}
-          </ToggleButton>
-          {/* Manual column order only applies to semantic layers, not flattened
-              depth stages. */}
-          {!flatten && (
-            <LayerOrderList
-              order={layerOrder}
-              onReorder={onReorderLayers}
-              onReset={onResetLayerOrder}
-              canReset={canResetLayerOrder}
-            />
-          )}
-          <ToggleButton
-            active={fullNames}
-            onClick={onFullNames}
-            title="Grow each node to show its full name instead of truncating"
-          >
-            <Text size={13} /> Full names
-          </ToggleButton>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <span className="text-muted">Collapse</span>
-        <div className="grid grid-cols-2 gap-1">
-          <button
-            type="button"
-            onClick={onCollapseAll}
-            disabled={flatten}
-            className="whitespace-nowrap rounded border border-border px-2 py-1.5 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
-          >
-            Collapse all
-          </button>
-          <button
-            type="button"
-            onClick={onExpandAll}
-            disabled={flatten}
-            className="whitespace-nowrap rounded border border-border px-2 py-1.5 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
-          >
-            Expand all
-          </button>
-        </div>
-        {!flatten && collapsedCount > 0 && (
-          <span className="text-[11px] text-muted">{collapsedCount} layers collapsed</span>
-        )}
-      </div>
-
-      <div className="border-border border-t pt-2 text-[11px] text-muted leading-relaxed">
-        Column lineage: <span className="text-emerald-400">{coverage.column_lineage_ok ?? 0} ok</span> ·{" "}
-        <span className="text-amber-400">{coverage.column_lineage_partial ?? 0} partial</span> ·{" "}
-        {coverage.column_lineage_failed ?? 0} none / {coverage.models ?? 0} models
-      </div>
     </div>
   );
 }
 
-function ToggleButton({
-  active,
-  onClick,
-  title,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-pressed={active}
-      className={cn(
-        "flex w-full items-center gap-2 whitespace-nowrap rounded border px-2.5 py-1.5 text-left",
-        active ? "border-accent bg-accent/15 text-fg" : "border-border text-muted hover:text-fg",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
+const CATEGORY_LABELS: Partial<Record<ColorKey, string>> = {
+  [MATERIALIZATION_COLOR_KEY]: "Materialization",
+  [ERROR_COLOR_KEY]: "Errors",
+  [OWNER_COLOR_KEY]: "Git owner",
+  [RISK_COLOR_KEY]: "Ownership risk",
+};
+const colorLabel = (k: ColorKey): string =>
+  CATEGORY_LABELS[k] ?? METRICS.find((m) => m.key === k)?.label ?? k;
 
 function Legend({ status }: { status: boolean }) {
   if (status) {
@@ -1514,6 +1612,7 @@ function OwnerLegend({
 
 // Vertical, collapsible layer-order editor under the "Layers on" toggle. Top of
 // the list = leftmost column; drag a row or use the arrows to move it.
+
 function LayerOrderList({
   order,
   onReorder,
@@ -1525,88 +1624,77 @@ function LayerOrderList({
   onReset: () => void;
   canReset: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   return (
-    <div className="flex flex-col gap-1 rounded border border-border px-2 py-1.5">
+    <div className="flex flex-col gap-1 border-border border-t px-2 pt-2.5">
+      <div className="flex items-center justify-between">
+        <span className="font-medium text-fg">Layer order</span>
+        {canReset && <span className="text-[10px] text-accent">custom</span>}
+      </div>
+      <span className="text-[10px] text-muted/70">Top = leftmost column. Drag or use arrows.</span>
+      <ul className="flex flex-col gap-0.5">
+        {order.map((name, i) => (
+          <li
+            key={name}
+            draggable
+            onDragStart={() => setDragIndex(i)}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setOverIndex(i);
+            }}
+            onDrop={() => {
+              if (dragIndex !== null && dragIndex !== i) onReorder(dragIndex, i);
+              setDragIndex(null);
+              setOverIndex(null);
+            }}
+            onDragEnd={() => {
+              setDragIndex(null);
+              setOverIndex(null);
+            }}
+            className={cn(
+              "flex cursor-grab items-center gap-1.5 rounded border px-1.5 py-1 active:cursor-grabbing",
+              overIndex === i && dragIndex !== null && dragIndex !== i
+                ? "border-accent bg-panel-2"
+                : "border-transparent hover:bg-panel-2",
+              dragIndex === i && "opacity-40",
+            )}
+          >
+            <GripVertical size={12} className="shrink-0 text-muted" />
+            <span className="w-4 shrink-0 text-right text-[10px] text-muted tabular-nums">{i + 1}</span>
+            <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: layerColor(name) }} />
+            <span className="min-w-0 flex-1 truncate text-fg" title={name}>
+              {name}
+            </span>
+            <button
+              type="button"
+              onClick={() => onReorder(i, i - 1)}
+              disabled={i === 0}
+              title="Move up (left)"
+              className="text-muted hover:text-fg disabled:opacity-30 disabled:hover:text-muted"
+            >
+              <ArrowUp size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onReorder(i, i + 1)}
+              disabled={i === order.length - 1}
+              title="Move down (right)"
+              className="text-muted hover:text-fg disabled:opacity-30 disabled:hover:text-muted"
+            >
+              <ArrowDown size={12} />
+            </button>
+          </li>
+        ))}
+      </ul>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex items-center gap-1.5 text-left text-muted hover:text-fg"
+        onClick={onReset}
+        disabled={!canReset}
+        className="mt-1 flex items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
       >
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        <span className="flex-1">Layer order</span>
-        {canReset && <span className="text-[10px] text-accent">custom</span>}
+        <RotateCcw size={12} /> Default order
       </button>
-      {open && (
-        <>
-          <span className="text-[10px] text-muted/70">Top = leftmost column. Drag or use arrows.</span>
-          <ul className="flex flex-col gap-0.5">
-            {order.map((name, i) => (
-              <li
-                key={name}
-                draggable
-                onDragStart={() => setDragIndex(i)}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setOverIndex(i);
-                }}
-                onDrop={() => {
-                  if (dragIndex !== null && dragIndex !== i) onReorder(dragIndex, i);
-                  setDragIndex(null);
-                  setOverIndex(null);
-                }}
-                onDragEnd={() => {
-                  setDragIndex(null);
-                  setOverIndex(null);
-                }}
-                className={cn(
-                  "flex cursor-grab items-center gap-1.5 rounded border px-1.5 py-1 active:cursor-grabbing",
-                  overIndex === i && dragIndex !== null && dragIndex !== i
-                    ? "border-accent bg-panel-2"
-                    : "border-transparent hover:bg-panel-2",
-                  dragIndex === i && "opacity-40",
-                )}
-              >
-                <GripVertical size={12} className="shrink-0 text-muted" />
-                <span className="w-4 shrink-0 text-right text-[10px] text-muted tabular-nums">{i + 1}</span>
-                <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: layerColor(name) }} />
-                <span className="min-w-0 flex-1 truncate text-fg" title={name}>
-                  {name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onReorder(i, i - 1)}
-                  disabled={i === 0}
-                  title="Move up (left)"
-                  className="text-muted hover:text-fg disabled:opacity-30 disabled:hover:text-muted"
-                >
-                  <ArrowUp size={12} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onReorder(i, i + 1)}
-                  disabled={i === order.length - 1}
-                  title="Move down (right)"
-                  className="text-muted hover:text-fg disabled:opacity-30 disabled:hover:text-muted"
-                >
-                  <ArrowDown size={12} />
-                </button>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={onReset}
-            disabled={!canReset}
-            className="mt-1 flex items-center justify-center gap-1.5 rounded border border-border px-2 py-1 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
-          >
-            <RotateCcw size={12} /> Default order
-          </button>
-        </>
-      )}
     </div>
   );
 }

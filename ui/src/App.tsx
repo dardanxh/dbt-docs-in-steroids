@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { AnalyticsDashboard } from "@/features/analytics/AnalyticsDashboard";
 import { ApiDocsView } from "@/features/api-docs/ApiDocsView";
-import { Sidebar, type View } from "@/features/app-shell/Sidebar";
+import { Sidebar } from "@/features/app-shell/Sidebar";
 import { SidebarSlotProvider } from "@/features/app-shell/sidebar-slot";
 import { ThemeToggle } from "@/features/app-shell/ThemeToggle";
+import { TopNav, type View } from "@/features/app-shell/TopNav";
 import { CommandPalette } from "@/features/command/CommandPalette";
 import { LineageView } from "@/features/lineage/LineageView";
 import { ProjectBar } from "@/features/projects/ProjectBar";
@@ -57,9 +58,7 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-4 border-border border-b bg-panel px-4 py-2.5">
-        <div className="flex items-center gap-2 font-semibold text-fg text-sm">
-          <span className="text-accent">◈</span> dbt-docs-in-steroids
-        </div>
+        <TopNav view={view} onView={setView} />
         <div className="ml-auto flex items-center gap-3">
           <ProjectBar selectedId={projectId} onSelect={setProjectId} />
           <ThemeToggle />
@@ -68,6 +67,7 @@ export function App() {
 
       <SidebarSlotProvider>
         <div className="flex min-h-0 flex-1">
+          {view === "lineage" && projectId && <Sidebar />}
           <main className="min-w-0 flex-1">
             {!projectId && view !== "projects" && view !== "settings" && view !== "api" ? (
               <Empty onGoProjects={() => setView("projects")} />
@@ -87,7 +87,6 @@ export function App() {
               <Empty onGoProjects={() => setView("projects")} />
             )}
           </main>
-          <Sidebar view={view} onView={setView} />
         </div>
       </SidebarSlotProvider>
 

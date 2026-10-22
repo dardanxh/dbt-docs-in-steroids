@@ -14,7 +14,7 @@ Vite + React 19 + TypeScript (strict). Biome for lint/format, pnpm.
 
 ```
 src/
-├── App.tsx              # shell: right-sidebar nav + ProjectBar + ThemeToggle; URL state (project/view/node)
+├── App.tsx              # shell: top nav + ProjectBar + ThemeToggle, left controls sidebar; URL state (project/view/node)
 ├── lib/
 │   ├── api.ts           # apiGet/apiPost/apiPostForm/apiDelete over proxied /api
 │   ├── colors.ts        # layer colors + hotspot color scale
@@ -23,7 +23,7 @@ src/
 │   └── api-types.gen.ts # generated (pnpm openapi:gen); do not edit
 ├── types.ts             # hand-written domain types mirroring the API
 └── features/
-    ├── app-shell/       # Sidebar (primary nav), ThemeToggle
+    ├── app-shell/       # TopNav (primary nav), Sidebar (left, view controls slot), ThemeToggle
     ├── command/         # CommandPalette (Cmd/Ctrl-K)
     ├── projects/        # api.ts (query hooks) + ProjectBar + ProjectsView
     ├── lineage/         # api.ts, layout.ts (swimlane), LineageView, NodePanel, nodes.tsx

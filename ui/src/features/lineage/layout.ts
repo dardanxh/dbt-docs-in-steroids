@@ -3,10 +3,8 @@ import { hotspotColor, statusColor } from "@/lib/colors";
 import type { GraphResponse, MetricKey } from "@/types";
 
 // Deterministic layered ("swimlane") layout: one column per layer in the
-// canonical order the API returns, nodes stacked within each column. Two opt-in
-// refinements keep large graphs readable:
-//   • tidy   — barycenter sweeps reorder nodes within each column to minimize
-//              edge crossings (untangles the "hairball").
+// canonical order the API returns, nodes stacked within each column. One opt-in
+// refinement:
 //   • flatten — ignore the semantic layers entirely and derive columns purely
 //              from dependency depth (longest path from a root).
 // No external layout engine — predictable and fast at dbt-project scale.
@@ -16,12 +14,11 @@ export const NODE_WIDTH = 230;
 export const ROW_HEIGHT = 46;
 const HEADER_Y = 0;
 const FIRST_ROW_Y = 70;
-const TIDY_SWEEPS = 6;
 const COLUMN_GAP = COLUMN_WIDTH - NODE_WIDTH; // horizontal breathing room between columns
 const NODE_MAX_WIDTH = 620; // cap so one very long name can't blow the layout out
 
-// Measure a node label's rendered width (px) so "Full names" mode can size nodes
-// to their content and space columns without overlap. Uses a cached canvas
+// Measure a node label's rendered width (px) so nodes can be sized to their
+// full name and space columns without overlap. Uses a cached canvas
 // context; falls back to a rough per-char estimate when there's no DOM (tests).
 let _measureCtx: CanvasRenderingContext2D | null = null;
 function measureLabel(text: string): number {
@@ -54,7 +51,6 @@ export interface ModelNodeData {
   highlighted: boolean;
   connected: boolean; // on the green relationship path (relationship mode)
   badge?: string; // right-aligned chip (LOC / used·total column fraction / etc.)
-  fullName?: boolean; // size node to its full label instead of truncating
   [key: string]: unknown;
 }
 
@@ -80,11 +76,9 @@ export interface LayoutOptions {
   focusIds?: Set<string> | null; // when set, ONLY these nodes (+ their edges) are shown
   layerOrder?: string[]; // custom left-to-right column order (defaults to API order)
   badges?: Map<string, string>; // nodeId -> right-aligned badge text
-  tidy?: boolean; // reorder within columns to reduce edge crossings
   flatten?: boolean; // ignore semantic layers; columns = dependency depth
   colorByStatus?: boolean; // tint by column-lineage status instead of the metric heat scale
   tintOverride?: Map<string, string>; // node id -> fill color (owner / risk modes); wins over metric/status
-  fullNames?: boolean; // size nodes to their full label (no truncation); re-space columns to fit
   connect?: boolean; // relationship mode: paint the highlighted path/edges green
 }
 
@@ -146,18 +140,15 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
     slotEdges.push({ source: s, target: t, active: opts.activeEdges?.has(`${e.src}->${e.dst}`) ?? false });
   }
 
-  // ---- Reduce crossings (barycenter sweeps) --------------------------------
-  if (opts.tidy) tidyColumns(columns, slotEdges);
-
   // ---- Column x-positions --------------------------------------------------
-  // Fixed grid normally; in "Full names" mode each column is as wide as its
-  // widest node (measured from the label) so nodes can grow without overlapping.
+  // Nodes always show their full name, so each column is as wide as its widest
+  // node (measured from the label); collapsed columns keep the fixed width.
   const columnX: number[] = [];
   {
     let acc = 0;
     for (const col of columns) {
       columnX.push(acc);
-      if (!opts.fullNames || col.collapsed) {
+      if (col.collapsed) {
         acc += COLUMN_WIDTH;
       } else {
         let maxW = NODE_WIDTH;
@@ -227,7 +218,6 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
           highlighted,
           connected: !!opts.connect && highlighted,
           badge: opts.badges?.get(n.id),
-          fullName: !!opts.fullNames,
         } satisfies ModelNodeData,
         draggable: false,
       });
@@ -327,69 +317,4 @@ function flattenColumns(
     });
   }
   return columns;
-}
-
-// Barycenter crossing-minimization: repeatedly reorder each column so a node
-// sits near the average row of the neighbors it connects to. Sweeps alternate
-// direction (left-anchored, then right-anchored) and converge quickly.
-function tidyColumns(columns: Column[], edges: { source: string; target: string }[]): void {
-  const order = columns.map((c) => (c.collapsed ? [`layer:${c.name}`] : [...c.nodeIds]));
-  const colOf = new Map<string, number>();
-  order.forEach((slots, ci) => {
-    for (const s of slots) colOf.set(s, ci);
-  });
-
-  const neighbors = new Map<string, string[]>();
-  const link = (a: string, b: string) => (neighbors.get(a) ?? neighbors.set(a, []).get(a))?.push(b);
-  for (const e of edges) {
-    if (!colOf.has(e.source) || !colOf.has(e.target)) continue;
-    link(e.source, e.target);
-    link(e.target, e.source);
-  }
-
-  const row = new Map<string, number>();
-  const setRows = (slots: string[]) => {
-    slots.forEach((s, i) => {
-      row.set(s, i);
-    });
-  };
-  for (const slots of order) setRows(slots);
-
-  const sweep = (forward: boolean) => {
-    const indices = order.map((_, i) => i);
-    for (const ci of forward ? indices : indices.reverse()) {
-      const slots = order[ci];
-      if (slots.length < 2) continue;
-      const bary = new Map<string, number>();
-      slots.forEach((s, i) => {
-        // Anchor to the already-settled side (left on a forward sweep).
-        const ns = (neighbors.get(s) ?? []).filter((t) => {
-          const tc = colOf.get(t);
-          return tc !== undefined && (forward ? tc < ci : tc > ci);
-        });
-        if (ns.length === 0) {
-          bary.set(s, i); // no anchor → keep current position
-          return;
-        }
-        let sum = 0;
-        for (const t of ns) sum += row.get(t) ?? 0;
-        bary.set(s, sum / ns.length);
-      });
-      const sorted = slots
-        .map((s, i) => ({ s, i }))
-        .sort((a, b) => (bary.get(a.s) ?? 0) - (bary.get(b.s) ?? 0) || a.i - b.i)
-        .map((x) => x.s);
-      order[ci] = sorted;
-      setRows(sorted);
-    }
-  };
-
-  for (let k = 0; k < TIDY_SWEEPS; k++) {
-    sweep(true);
-    sweep(false);
-  }
-
-  columns.forEach((c, ci) => {
-    if (!c.collapsed) c.nodeIds = order[ci];
-  });
 }
