@@ -706,6 +706,15 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     return undefined;
   }, [graph, colorByOwner, colorByRisk, colorByError, colorByMaterialization]);
 
+  // Endpoint candidates for the relationship card, alphabetical.
+  const pickableModels = useMemo(
+    () =>
+      (graph?.nodes ?? [])
+        .map((n) => ({ id: n.id, name: n.name }))
+        .sort((x, y) => x.name.localeCompare(y.name)),
+    [graph],
+  );
+
   const layout = useMemo(() => {
     if (!graph) return { nodes: [], edges: [] };
     return computeLayout(graph, {
@@ -909,33 +918,35 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
                 }
                 ownershipTracked={ownershipTracked}
                 errorsTracked={errorsTracked}
+                relMode={relMode}
+                onToggleRelMode={toggleRelMode}
               />
             </>,
             sidebarSlot,
           )}
 
-        <GraphLegend
-          colorBy={colorBy}
-          owners={owners}
-          ownerFilter={ownerFilter}
-          onToggleOwner={toggleOwner}
-          onClearOwners={() => setOwnerFilter(new Set())}
-          materializations={materializations}
-        />
-
-        <div className="-translate-x-1/2 absolute top-4 left-1/2 z-10 flex flex-col items-center gap-2">
-          <RelationshipBar
-            active={relMode}
-            onToggle={toggleRelMode}
-            endpointA={
-              relEndpoints.a ? (graph.nodes.find((n) => n.id === relEndpoints.a)?.name ?? null) : null
-            }
-            endpointB={
-              relEndpoints.b ? (graph.nodes.find((n) => n.id === relEndpoints.b)?.name ?? null) : null
-            }
+        {relMode ? (
+          <RelationshipCard
+            models={pickableModels}
+            endpointA={relEndpoints.a}
+            endpointB={relEndpoints.b}
+            onPick={(slot, id) => setRelEndpoints((prev) => ({ ...prev, [slot]: id }))}
             result={relationship}
             onClear={() => setRelEndpoints({ a: null, b: null })}
+            onClose={toggleRelMode}
           />
+        ) : (
+          <GraphLegend
+            colorBy={colorBy}
+            owners={owners}
+            ownerFilter={ownerFilter}
+            onToggleOwner={toggleOwner}
+            onClearOwners={() => setOwnerFilter(new Set())}
+            materializations={materializations}
+          />
+        )}
+
+        <div className="-translate-x-1/2 absolute top-4 left-1/2 z-10 flex flex-col items-center gap-2">
           {trace && (
             <div className="rounded-md border border-border bg-panel/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur">
               Tracing <span className="font-semibold text-accent">{trace.rootColumn}</span> ·{" "}
@@ -1227,73 +1238,146 @@ function SearchBar({
   );
 }
 
-function RelationshipBar({
-  active,
-  onToggle,
+// Bottom-left card while "Check relationship" is on (replaces the legend).
+// Pick endpoints A and B by typing a model name, or by clicking models on the
+// graph; the connecting subgraph is painted green.
+function RelationshipCard({
+  models,
   endpointA,
   endpointB,
+  onPick,
   result,
   onClear,
+  onClose,
 }: {
-  active: boolean;
-  onToggle: () => void;
+  models: { id: string; name: string }[];
   endpointA: string | null;
   endpointB: string | null;
+  onPick: (slot: "a" | "b", id: string | null) => void;
   result: { connected: boolean; nodes: Set<string> } | null;
   onClear: () => void;
+  onClose: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border bg-panel/95 px-2 py-1 text-xs shadow-lg backdrop-blur">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-pressed={active}
-        title="Pick two models to check if (and how) they're connected"
-        className={cn(
-          "flex items-center gap-1.5 rounded border px-2 py-0.5",
-          active ? "border-emerald-500 bg-emerald-500/15 text-fg" : "border-border text-muted hover:text-fg",
+    <div className="absolute bottom-4 left-16 z-10 flex w-80 flex-col gap-2 rounded-lg border border-border bg-panel/95 px-3 py-2.5 text-xs shadow-lg backdrop-blur">
+      <div className="flex items-center gap-2">
+        <Route size={13} className="text-emerald-400" />
+        <span className="flex-1 font-medium text-[10px] text-muted uppercase tracking-wide">
+          Check relationship
+        </span>
+        {(endpointA || endpointB) && (
+          <button type="button" onClick={onClear} className="text-[11px] text-muted underline hover:text-fg">
+            clear
+          </button>
         )}
-      >
-        <Route size={13} /> Check relationship
-      </button>
-      {active && (
-        <>
-          <Endpoint label="A" name={endpointA} />
-          <span className="text-muted">→</span>
-          <Endpoint label="B" name={endpointB} />
-          {result &&
-            (result.connected ? (
-              <span className="text-emerald-400">connected · {result.nodes.size} model(s) on path</span>
-            ) : (
-              <span className="text-amber-400">not connected</span>
-            ))}
-          {(endpointA || endpointB) && (
-            <button
-              type="button"
-              onClick={onClear}
-              title="Clear endpoints"
-              className="text-muted hover:text-fg"
-            >
-              <X size={12} />
-            </button>
-          )}
-        </>
+        <button type="button" onClick={onClose} title="Close" className="text-muted hover:text-fg">
+          <X size={13} />
+        </button>
+      </div>
+      <ModelPicker label="A" models={models} value={endpointA} onChange={(id) => onPick("a", id)} />
+      <ModelPicker label="B" models={models} value={endpointB} onChange={(id) => onPick("b", id)} />
+      {result ? (
+        result.connected ? (
+          <span className="text-emerald-400">Connected · {result.nodes.size} model(s) on the path</span>
+        ) : (
+          <span className="text-amber-400">Not connected — no path between A and B</span>
+        )
+      ) : (
+        <span className="text-[11px] text-muted">Type a name, or click two models on the graph.</span>
       )}
     </div>
   );
 }
 
-function Endpoint({ label, name }: { label: string; name: string | null }) {
+// Endpoint slot: shows the picked model, or a search box with suggestions
+// (opening upward, since the card sits at the bottom of the canvas).
+function ModelPicker({
+  label,
+  models,
+  value,
+  onChange,
+}: {
+  label: string;
+  models: { id: string; name: string }[];
+  value: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const picked = value ? models.find((m) => m.id === value) : null;
+  const q = query.trim().toLowerCase();
+  // Rank: exact name (ignoring a "schema." prefix) → starts with → contains.
+  const rank = (name: string) => {
+    const n = name.toLowerCase();
+    const short = n.slice(n.lastIndexOf(".") + 1);
+    return n === q || short === q ? 0 : n.startsWith(q) || short.startsWith(q) ? 1 : 2;
+  };
+  const matches = q
+    ? models
+        .filter((m) => m.name.toLowerCase().includes(q))
+        .sort((x, y) => rank(x.name) - rank(y.name))
+        .slice(0, 8)
+    : [];
+
   return (
-    <span
-      className={cn(
-        "flex items-center gap-1 rounded px-1.5 py-0.5",
-        name ? "bg-panel-2 text-fg" : "border border-border border-dashed text-muted",
+    <div className="relative flex items-center gap-2">
+      <span className="w-3 shrink-0 font-semibold text-emerald-400">{label}</span>
+      {picked ? (
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 rounded bg-panel-2 px-2 py-1">
+          <span className="min-w-0 flex-1 truncate text-fg" title={picked.name}>
+            {picked.name}
+          </span>
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            title="Remove"
+            className="text-muted hover:text-fg"
+          >
+            <X size={11} />
+          </button>
+        </span>
+      ) : (
+        <input
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && matches[0]) {
+              onChange(matches[0].id);
+              setQuery("");
+            }
+          }}
+          placeholder="Search or click a model…"
+          className="min-w-0 flex-1 rounded border border-border border-dashed bg-transparent px-2 py-1 text-fg outline-none placeholder:text-muted focus:border-accent focus:border-solid"
+        />
       )}
-    >
-      <span className="font-semibold text-emerald-400">{label}</span>
-      <span className="max-w-[140px] truncate">{name ?? "pick a model…"}</span>
-    </span>
+      {open && !picked && matches.length > 0 && (
+        <ul className="absolute right-0 bottom-full left-5 mb-1 max-h-56 overflow-y-auto rounded-md border border-border bg-panel py-1 shadow-xl">
+          {matches.map((m) => (
+            <li key={m.id}>
+              <button
+                type="button"
+                // mousedown (not click) so it fires before the input's blur closes the list
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onChange(m.id);
+                  setQuery("");
+                  setOpen(false);
+                }}
+                className="w-full truncate px-2 py-1 text-left text-fg hover:bg-panel-2"
+                title={m.name}
+              >
+                {m.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -1312,6 +1396,8 @@ function Toolbar({
   canResetLayerOrder,
   ownershipTracked,
   errorsTracked,
+  relMode,
+  onToggleRelMode,
 }: {
   colorBy: ColorKey;
   onColorBy: (m: ColorKey) => void;
@@ -1327,6 +1413,8 @@ function Toolbar({
   canResetLayerOrder: boolean;
   ownershipTracked: boolean;
   errorsTracked: boolean;
+  relMode: boolean;
+  onToggleRelMode: () => void;
 }) {
   const metricOptions: ColorOption<ColorKey>[] = [...METRICS]
     .sort((a, b) => a.label.localeCompare(b.label))
@@ -1449,6 +1537,23 @@ function Toolbar({
           />
         )}
       </SidebarMenu>
+
+      <div className="mt-3 border-border border-t px-2.5 pt-3 pb-1 font-medium text-[10px] text-muted uppercase tracking-wide">
+        Actions
+      </div>
+      <button
+        type="button"
+        onClick={onToggleRelMode}
+        aria-pressed={relMode}
+        title="Pick two models to check if (and how) they're connected"
+        className={cn(
+          "flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left font-medium",
+          relMode ? "bg-emerald-500/15 text-fg ring-1 ring-emerald-500/50" : "text-fg hover:bg-panel-2",
+        )}
+      >
+        <Route size={16} className={relMode ? "text-emerald-400" : "text-muted"} />
+        <span className="flex-1">Check relationship</span>
+      </button>
     </div>
   );
 }
