@@ -16,6 +16,18 @@ export function layerColor(layer: string): string {
   return LAYER_COLORS[layer] ?? LAYER_COLORS.other;
 }
 
+// Black or white, whichever reads better on a #rrggbb background (WCAG luminance).
+// Non-hex inputs (CSS vars) get white.
+export function textOn(hex: string): string {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return "#ffffff";
+  const lin = (i: number) => {
+    const c = Number.parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const l = 0.2126 * lin(1) + 0.7152 * lin(3) + 0.0722 * lin(5);
+  return l > 0.179 ? "#000000" : "#ffffff";
+}
+
 // Sequential "cool → hot" scale for hotspot intensity (0..1). Blue → amber → red.
 const STOPS: Array<[number, [number, number, number]]> = [
   [0.0, [100, 116, 139]], // neutral slate (cold) — subtle on both light & dark after mixing

@@ -36,7 +36,6 @@ import {
   TriangleAlert,
   UserRound,
   Users,
-  Waypoints,
   Workflow,
   X,
 } from "lucide-react";
@@ -56,8 +55,8 @@ import {
 } from "@/lib/colors";
 import { useSettings, useThemeTokens } from "@/lib/settings";
 import { cn } from "@/lib/utils";
-import type { Column, ColumnLineage, MetricKey, NodeMetrics } from "@/types";
-import { useColumnLineage, useColumnUsage, useGraph, useNodeDetail } from "./api";
+import type { ColumnLineage, MetricKey, NodeMetrics } from "@/types";
+import { useColumnUsage, useGraph } from "./api";
 import { computeLayout } from "./layout";
 import { NodePanel } from "./NodePanel";
 import { CollapsedNode, HeaderNode, ModelNode } from "./nodes";
@@ -355,11 +354,6 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   // in which direction. null depth = the whole lineage.
   const [focusDepth, setFocusDepth] = useState<number | null>(null);
   const [focusDirection, setFocusDirection] = useState<FocusDirection>("both");
-  // Column-flow (focus mode only): trace one of the focused model's columns
-  // both up (source columns it derives from) and down (columns it feeds), and
-  // dim everything off that column's path. A toggle + per-column picker.
-  const [columnFlow, setColumnFlow] = useState(false);
-  const [flowColumn, setFlowColumn] = useState<string | null>(null);
 
   // On first load, collapse oversized layers (e.g. 200+ sources) so the swimlane
   // graph fits the viewport instead of stretching thousands of px tall.
@@ -559,44 +553,6 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     return matched;
   }, [graph, filterActive, search, ownerFilter]);
 
-  // Column-flow data: the focused model's columns (for the picker) and the
-  // selected column's up+down lineage. Both hooks stay disabled unless the
-  // toggle is on inside a focus tab.
-  const { data: focusNode } = useNodeDetail(projectId, columnFlow ? focusId : null);
-  const { data: flowLineage, isFetching: flowLoading } = useColumnLineage(
-    projectId,
-    focusId,
-    columnFlow ? flowColumn : null,
-    "both",
-  );
-
-  // Leaving a focus tab (or switching tabs) resets the column-flow toggle so it
-  // never leaks a stale column onto a different model.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset keyed only on the active tab
-  useEffect(() => {
-    setColumnFlow(false);
-    setFlowColumn(null);
-  }, [activeKey]);
-
-  // Turning the toggle on with no column chosen defaults to the first traceable
-  // column so the canvas shows a flow immediately.
-  useEffect(() => {
-    if (columnFlow && focusNode && !flowColumn) {
-      const first = focusNode.columns.find((c) => c.has_lineage);
-      if (first) setFlowColumn(first.name);
-    }
-  }, [columnFlow, focusNode, flowColumn]);
-
-  // Nodes/edges touched by the traced column — same shape as a column trace,
-  // used to highlight the flow (and dim the rest) inside the focus subgraph.
-  const columnFlowHighlight = useMemo(() => {
-    if (!columnFlow || !focusId || !flowLineage) return null;
-    return {
-      nodes: new Set<string>(flowLineage.columns.map((c) => c.node_id)),
-      edges: new Set<string>(flowLineage.edges.map((e) => `${e.src.node_id}->${e.dst.node_id}`)),
-    };
-  }, [columnFlow, focusId, flowLineage]);
-
   // Highlight priority: relationship > column trace > node selection > filter.
   const highlight = useMemo(() => {
     // Relationship overrides even inside a focus tab: we always want off-path
@@ -609,19 +565,14 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
         edges: new Set<string>(trace.lineage.edges.map((e) => `${e.src.node_id}->${e.dst.node_id}`)),
       };
     }
-    // In a focus tab everything shown is already the relevant subgraph. Column
-    // flow is the exception: when tracing a column we DO dim off-path nodes so
-    // the source→…→consumer route stands out. Otherwise selecting a node only
-    // highlights its in/out ARROWS (dimming would make related nodes look
-    // unrelated).
-    if (focusId) {
-      if (columnFlowHighlight) return columnFlowHighlight;
-      return { nodes: undefined, edges: selectionHighlight?.edges };
-    }
+    // In a focus tab everything shown is already the relevant subgraph, so
+    // selecting a node only highlights its in/out ARROWS (dimming would make
+    // related nodes look unrelated).
+    if (focusId) return { nodes: undefined, edges: selectionHighlight?.edges };
     if (selectionHighlight) return selectionHighlight;
     if (filterMatch) return { nodes: filterMatch, edges: new Set<string>() };
     return { nodes: undefined, edges: undefined };
-  }, [relationship, layerDeps, trace, focusId, columnFlowHighlight, selectionHighlight, filterMatch]);
+  }, [relationship, layerDeps, trace, focusId, selectionHighlight, filterMatch]);
 
   // A trace often reaches into a collapsed layer (e.g. sources). Expand any
   // layer that contains a highlighted node so the path is actually visible.
@@ -694,19 +645,6 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
   const badges = useMemo(() => {
     const map = new Map<string, string>();
     if (!graph) return map;
-    // Column flow: tag every node on the traced column's path with its own
-    // column name(s) so you can read which column each upstream/downstream
-    // model contributes.
-    if (columnFlow && focusId && flowLineage) {
-      const byNode = new Map<string, Set<string>>();
-      for (const c of flowLineage.columns) {
-        const cols = byNode.get(c.node_id) ?? new Set<string>();
-        cols.add(c.column);
-        byNode.set(c.node_id, cols);
-      }
-      for (const [nid, cols] of byNode) map.set(nid, [...cols].join(", "));
-      return map;
-    }
     if (selectedNodeId) {
       const sel = graph.nodes.find((n) => n.id === selectedNodeId);
       if (sel) map.set(selectedNodeId, `${sel.metrics.column_count} cols`);
@@ -747,9 +685,6 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
     isCategorical,
     settings.badgeMetric,
     settings.showColumnFractions,
-    columnFlow,
-    focusId,
-    flowLineage,
   ]);
 
   // Owner / risk colorings resolve a full per-node tint map that overrides the
@@ -992,16 +927,6 @@ export function LineageView({ projectId, focusNodeId }: { projectId: string; foc
               onDirection={setFocusDirection}
               count={focusSet?.size ?? 1}
             />
-            <ColumnFlowControl
-              active={columnFlow}
-              onToggle={() => setColumnFlow((v) => !v)}
-              columns={focusNode?.columns ?? []}
-              column={flowColumn}
-              onColumn={setFlowColumn}
-              sourceCount={flowLineage?.source_columns.length ?? null}
-              partial={flowLineage?.partial ?? false}
-              loading={flowLoading}
-            />
           </div>
         )}
 
@@ -1206,72 +1131,6 @@ function FocusDepthControl({
         ))}
       </div>
       <span className="text-muted">· {count - 1} related</span>
-    </div>
-  );
-}
-
-function ColumnFlowControl({
-  active,
-  onToggle,
-  columns,
-  column,
-  onColumn,
-  sourceCount,
-  partial,
-  loading,
-}: {
-  active: boolean;
-  onToggle: () => void;
-  columns: Column[];
-  column: string | null;
-  onColumn: (c: string) => void;
-  sourceCount: number | null;
-  partial: boolean;
-  loading: boolean;
-}) {
-  const traceable = columns.filter((c) => c.has_lineage);
-  return (
-    <div className="flex items-center gap-2 rounded-md border border-border bg-panel/95 px-2 py-1.5 text-xs shadow-lg backdrop-blur">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-pressed={active}
-        title="Trace one column's upstream sources and downstream propagation across this model's lineage"
-        className={cn(
-          "flex items-center gap-1.5 rounded border px-2 py-0.5",
-          active ? "border-sky-500 bg-sky-500/15 text-fg" : "border-border text-muted hover:text-fg",
-        )}
-      >
-        <Waypoints size={13} /> Column flow
-      </button>
-      {active &&
-        (traceable.length === 0 ? (
-          <span className="text-muted">no column lineage</span>
-        ) : (
-          <>
-            <select
-              value={column ?? ""}
-              onChange={(e) => onColumn(e.target.value)}
-              className="max-w-[160px] rounded border border-border bg-panel-2 px-1.5 py-0.5 text-fg outline-none"
-            >
-              {traceable.map((c) => (
-                <option key={c.name} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            {loading ? (
-              <span className="text-muted">tracing…</span>
-            ) : (
-              sourceCount !== null && (
-                <span className="text-muted">
-                  {partial && <span className="text-amber-400">partial · </span>}
-                  {sourceCount} source col(s)
-                </span>
-              )
-            )}
-          </>
-        ))}
     </div>
   );
 }

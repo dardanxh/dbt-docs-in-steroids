@@ -1,5 +1,5 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { layerColor } from "@/lib/colors";
+import { layerColor, textOn } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { NODE_WIDTH } from "./layout";
 
@@ -60,12 +60,11 @@ export function HeaderNode({ data }: NodeProps) {
   const d = data as { layer: string; count: number; collapsed: boolean; label?: string; accent?: string };
   const accent = d.accent ?? layerColor(d.layer);
   return (
-    <div
-      className="flex items-center gap-2 rounded-md px-2 py-1 font-semibold text-xs uppercase tracking-wide"
-      style={{ color: accent }}
-    >
-      <span className="h-2.5 w-2.5 rounded-sm" style={{ background: accent }} />
-      {d.label ?? d.layer}
+    <div className="flex items-center gap-2 rounded-md px-2 py-1 font-semibold text-xs uppercase tracking-wide">
+      {/* Layer name as a badge in the layer's color; text picks black/white for contrast. */}
+      <span className="rounded px-1.5 py-0.5" style={{ background: accent, color: textOn(accent) }}>
+        {d.label ?? d.layer}
+      </span>
       <span className="rounded bg-panel-2 px-1.5 py-0.5 text-[10px] text-muted normal-case">{d.count}</span>
       <span className="text-[10px] text-muted normal-case">{d.collapsed ? "▶ expand" : "▼ collapse"}</span>
     </div>
