@@ -80,6 +80,19 @@ def test_owner_is_top_line_contributor(repo: Path) -> None:
     assert info.last_author == "Bob"
     assert info.last_modified_at is not None
     assert info.last_modified_at.year == 2022
+    assert info.commit_count == 2
+
+
+def test_commit_count_is_per_file(repo: Path) -> None:
+    _commit(repo, "models/a.sql", "a\n", "Alice", "2021-01-01T00:00:00+00:00")
+    _commit(repo, "models/a.sql", "a\nb\n", "Alice", "2021-02-01T00:00:00+00:00")
+    _commit(repo, "models/a.sql", "a\nb\nc\n", "Bob", "2021-03-01T00:00:00+00:00")
+    _commit(repo, "models/b.sql", "x\n", "Bob", "2021-04-01T00:00:00+00:00")
+
+    result = git_ownership.compute(str(repo))
+
+    assert result["models/a.sql"].commit_count == 3
+    assert result["models/b.sql"].commit_count == 1
 
 
 def test_non_repo_and_empty_return_empty() -> None:

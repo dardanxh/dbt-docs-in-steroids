@@ -604,6 +604,11 @@ export interface components {
             test_count: number;
             /** Column Count */
             column_count: number;
+            /**
+             * Commit Count
+             * @default 0
+             */
+            commit_count: number;
             /** Owner */
             owner?: string | null;
             /** Owner Share */

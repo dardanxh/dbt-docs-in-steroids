@@ -74,7 +74,7 @@ export function App() {
             ) : view === "lineage" && projectId ? (
               <LineageView projectId={projectId} focusNodeId={nodeId} />
             ) : view === "analytics" && projectId ? (
-              <AnalyticsDashboard projectId={projectId} />
+              <AnalyticsDashboard projectId={projectId} onOpenNode={openNode} />
             ) : view === "quality" && projectId ? (
               <QualityView projectId={projectId} onOpenNode={openNode} />
             ) : view === "projects" ? (

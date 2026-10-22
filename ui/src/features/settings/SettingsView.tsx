@@ -14,6 +14,7 @@ const BADGE_METRICS: { value: BadgeMetric; label: string }[] = [
   { value: "complexity", label: "Complexity" },
   { value: "cohesion", label: "Cohesion" },
   { value: "column_count", label: "Column count" },
+  { value: "commit_count", label: "Commit count" },
   { value: "downstream_count", label: "Downstream users" },
   { value: "none", label: "None (off)" },
 ];

@@ -95,6 +95,7 @@ class IngestionService:
             node.contributor_count = info.contributor_count
             node.last_author = info.last_author
             node.last_modified_at = info.last_modified_at
+            node.metrics.commit_count = info.commit_count
 
     @staticmethod
     def _build_stats(

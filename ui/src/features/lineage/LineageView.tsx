@@ -82,6 +82,7 @@ const METRICS: { key: MetricKey; label: string }[] = [
   { key: "test_count", label: "Test count" },
   { key: "cohesion", label: "Cohesion" },
   { key: "column_count", label: "Column count" },
+  { key: "commit_count", label: "Commit count (churn)" },
 ];
 
 // Categorical colorings (discrete palette + legend) live alongside the numeric

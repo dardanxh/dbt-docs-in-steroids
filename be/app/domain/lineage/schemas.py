@@ -18,6 +18,7 @@ class NodeMetricsOut(BaseModel):
     cohesion: float
     test_count: int
     column_count: int
+    commit_count: int = 0  # git commits touching the model file (churn)
     # Git ownership (null for upload-mode / non-git projects).
     owner: str | None = None
     owner_share: float | None = None

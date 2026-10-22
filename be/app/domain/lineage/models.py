@@ -53,6 +53,7 @@ class Node(Base):
     cohesion: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     test_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    commit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # git churn
 
     column_lineage_status: Mapped[str | None] = mapped_column(String(20), nullable=True)  # ok | partial | failed
 

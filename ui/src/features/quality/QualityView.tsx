@@ -4,7 +4,15 @@ import { layerColor } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import type { GraphNode } from "@/types";
 
-type SortKey = "name" | "layer" | "loc" | "complexity" | "cohesion" | "test_count" | "column_count";
+type SortKey =
+  | "name"
+  | "layer"
+  | "loc"
+  | "complexity"
+  | "cohesion"
+  | "test_count"
+  | "column_count"
+  | "commit_count";
 
 const COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
   { key: "name", label: "Model", numeric: false },
@@ -14,6 +22,7 @@ const COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
   { key: "cohesion", label: "Cohesion", numeric: true },
   { key: "test_count", label: "Tests", numeric: true },
   { key: "column_count", label: "Cols", numeric: true },
+  { key: "commit_count", label: "Commits", numeric: true },
 ];
 
 export function QualityView({
@@ -116,6 +125,7 @@ export function QualityView({
                   {m.metrics.test_count}
                 </td>
                 <td className="px-3 py-1.5 text-right text-muted">{m.metrics.column_count}</td>
+                <td className="px-3 py-1.5 text-right text-muted">{m.metrics.commit_count}</td>
               </tr>
             ))}
           </tbody>

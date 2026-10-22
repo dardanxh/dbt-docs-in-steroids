@@ -25,6 +25,7 @@ export interface NodeMetrics {
   cohesion: number;
   test_count: number;
   column_count: number;
+  commit_count: number; // git commits touching the model file (churn); 0 without git
   // Git ownership (null for upload-mode / non-git projects).
   owner: string | null;
   owner_share: number | null;
@@ -57,7 +58,8 @@ export type MetricKey =
   | "complexity"
   | "cohesion"
   | "test_count"
-  | "column_count";
+  | "column_count"
+  | "commit_count";
 
 export interface GraphNode {
   id: string;

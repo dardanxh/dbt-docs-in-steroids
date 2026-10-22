@@ -7,6 +7,7 @@ export type BadgeMetric =
   | "complexity"
   | "cohesion"
   | "column_count"
+  | "commit_count"
   | "downstream_count"
   | "none";
 

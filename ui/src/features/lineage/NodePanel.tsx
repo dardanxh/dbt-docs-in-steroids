@@ -303,7 +303,8 @@ function Ownership({ node }: { node: NodeDetail }) {
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
         <span className="text-muted">
-          {m.contributor_count} contributor{m.contributor_count === 1 ? "" : "s"}
+          {m.contributor_count} contributor{m.contributor_count === 1 ? "" : "s"} · {m.commit_count} commit
+          {m.commit_count === 1 ? "" : "s"}
         </span>
         {solo ? <Badge tone="amber">solo owner</Badge> : contested && <Badge tone="slate">contested</Badge>}
         {stale && <Badge tone="amber">stale</Badge>}

@@ -37,6 +37,7 @@ class NodeMetrics:
     cohesion: float = 0.0  # 0..1, input concentration proxy (higher = fewer upstreams)
     test_count: int = 0  # tests referencing this node
     column_count: int = 0  # number of columns
+    commit_count: int = 0  # git commits touching the file (churn; 0 when no git history)
 
 
 @dataclass

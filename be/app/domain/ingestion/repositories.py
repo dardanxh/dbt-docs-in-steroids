@@ -64,6 +64,7 @@ class LineagePersistenceRepository:
                     "cohesion": m.cohesion,
                     "test_count": m.test_count,
                     "column_count": m.column_count,
+                    "commit_count": m.commit_count,
                     "column_lineage_status": status_by_node.get(node.unique_id),
                     "owner": node.owner,
                     "owner_share": node.owner_share,

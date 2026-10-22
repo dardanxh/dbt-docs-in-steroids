@@ -3,7 +3,8 @@
 For a project whose artifacts live in a git working tree, we attribute each
 file's authorship to git actors by **total lines added** (``git log --numstat``
 summed per author). The top contributor is the model's "owner". We also record
-the most recent commit's author + date so the UI can flag stale models.
+the most recent commit's author + date so the UI can flag stale models, and
+the number of commits that touched each file (churn).
 
 One subprocess for the whole project subtree (not per file — dbt projects have
 hundreds of models). Degrades to an empty map for upload-mode projects (no repo)
@@ -33,6 +34,7 @@ class OwnershipInfo:
     contributor_count: int
     last_author: str  # author of the most recent commit touching the file
     last_modified_at: datetime  # timestamp of that commit
+    commit_count: int  # non-merge commits that touched the file (churn)
 
 
 def compute(source_ref: str | None) -> dict[str, OwnershipInfo]:
@@ -59,6 +61,7 @@ def compute(source_ref: str | None) -> dict[str, OwnershipInfo]:
 
     lines_by_author: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     last_touch: dict[str, tuple[str, datetime]] = {}
+    commits: dict[str, int] = defaultdict(int)
 
     cur_author: str | None = None
     cur_date: datetime | None = None
@@ -80,6 +83,8 @@ def compute(source_ref: str | None) -> dict[str, OwnershipInfo]:
             path = path[len(prefix) :]
         added = _to_int(added_s)  # binary files show "-"; treated as 0
         lines_by_author[path][cur_author] += added
+        # --numstat lists a path once per commit, so each line is one commit.
+        commits[path] += 1
         # git log is newest-first, so the first commit we see for a path is latest.
         if path not in last_touch and cur_date is not None:
             last_touch[path] = (cur_author, cur_date)
@@ -97,6 +102,7 @@ def compute(source_ref: str | None) -> dict[str, OwnershipInfo]:
             contributor_count=len(authors),
             last_author=last[0],
             last_modified_at=last[1],
+            commit_count=commits[path],
         )
     return result
 

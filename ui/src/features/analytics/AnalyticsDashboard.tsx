@@ -15,10 +15,17 @@ import { errorCategoryColor, layerColor, ownerColor } from "@/lib/colors";
 import { useThemeTokens } from "@/lib/settings";
 import type { Analytics, ErrorAnalytics, OwnershipStats } from "@/types";
 import { useAnalytics } from "./api";
+import { QualityScatter } from "./QualityScatter";
 
 const CHART_COLORS = ["#818cf8", "#38bdf8", "#f472b6", "#34d399", "#fbbf24", "#94a3b8"];
 
-export function AnalyticsDashboard({ projectId }: { projectId: string }) {
+export function AnalyticsDashboard({
+  projectId,
+  onOpenNode,
+}: {
+  projectId: string;
+  onOpenNode: (id: string) => void;
+}) {
   const { data, isPending, error } = useAnalytics(projectId);
   const tokens = useThemeTokens();
   const tickFill = tokens.muted;
@@ -58,6 +65,12 @@ export function AnalyticsDashboard({ projectId }: { projectId: string }) {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="lg:col-span-2">
+          <Card title="Compare two qualities">
+            <QualityScatter projectId={projectId} onOpenNode={onOpenNode} />
+          </Card>
+        </div>
+
         <Card title="Models per layer">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={layerData} margin={{ top: 8, right: 8, bottom: 8, left: -12 }}>
