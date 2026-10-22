@@ -1,5 +1,5 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { layerColor, STATUS_COLORS } from "@/lib/colors";
+import { layerColor } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { NODE_WIDTH } from "./layout";
 
@@ -9,14 +9,15 @@ export function ModelNode({ data, selected }: NodeProps) {
     layer: string;
     resourceType: string;
     tint: string;
-    columnLineageStatus: string | null;
     dimmed: boolean;
     highlighted: boolean;
     connected: boolean;
     badge?: string;
     fullName?: boolean;
   };
-  const accent = layerColor(d.layer);
+  // The strip + handles follow the active "Color by" quality, and the card gets a
+  // light wash of the same color (the layer is shown by the column header).
+  const accent = d.tint;
   return (
     <div
       style={{
@@ -53,13 +54,6 @@ export function ModelNode({ data, selected }: NodeProps) {
         <span className="shrink-0 rounded bg-panel-2 px-1 py-0.5 font-mono text-[10px] text-muted">
           {d.badge}
         </span>
-      )}
-      {d.columnLineageStatus && (
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          title={`column lineage: ${d.columnLineageStatus}`}
-          style={{ background: STATUS_COLORS[d.columnLineageStatus] ?? "#6b7280" }}
-        />
       )}
       <Handle type="source" position={Position.Right} style={{ background: accent, width: 6, height: 6 }} />
     </div>

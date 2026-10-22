@@ -35,11 +35,11 @@ function measureLabel(text: string): number {
 }
 
 // Estimate the on-screen width of a model node from its label + trimmings
-// (icon, badge, status dot, padding). Generous by design — the node itself is
+// (icon, badge, padding). Generous by design — the node itself is
 // sized to `max-content`, so this only governs column spacing (over-estimating
 // just adds a little slack, under-estimating would overlap).
 function estimateNodeWidth(name: string, resourceType: string, badge?: string): number {
-  const extras = 20 /* px-2.5 ×2 */ + 5 /* borders */ + 8 /* gaps */ + 16 /* status dot */ + 24; /* buffer */
+  const extras = 20 /* px-2.5 ×2 */ + 5 /* borders */ + 8 /* gaps */ + 24; /* buffer */
   const icon = resourceType === "source" || resourceType === "seed" ? 22 : 0;
   const badgeW = badge ? 10 + badge.length * 6.5 : 0;
   return Math.min(NODE_MAX_WIDTH, Math.ceil(measureLabel(name) + extras + icon + badgeW));
@@ -50,7 +50,6 @@ export interface ModelNodeData {
   layer: string;
   resourceType: string;
   tint: string; // resolved node fill color (heat scale, status, owner, or risk)
-  columnLineageStatus: string | null;
   dimmed: boolean;
   highlighted: boolean;
   connected: boolean; // on the green relationship path (relationship mode)
@@ -224,7 +223,6 @@ export function computeLayout(graph: GraphResponse, opts: LayoutOptions): Layout
             (opts.colorByStatus
               ? statusColor(n.column_lineage_status)
               : hotspotColor(norm(n.metrics[metric] ?? 0))),
-          columnLineageStatus: n.column_lineage_status,
           dimmed: hasHighlight && !highlighted,
           highlighted,
           connected: !!opts.connect && highlighted,
